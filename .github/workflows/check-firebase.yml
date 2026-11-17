@@ -1,0 +1,24 @@
+name: Vérifier la configuration Firebase
+
+on:
+  push:
+    branches: [main]
+    paths: [app/src/main/assets/firebase-config.js, .github/workflows/check-firebase.yml]
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tester la clé auprès de Firebase
+        run: |
+          KEY=$(sed -n 's/.*apiKey: *"\([^"]*\)".*/\1/p' app/src/main/assets/firebase-config.js)
+          R=$(curl -sS -X POST "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=$KEY" \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"verification@example.com","password":"x","returnSecureToken":true}')
+          echo "$R"
+          if echo "$R" | grep -q "API key not valid\|API_KEY_INVALID"; then
+            echo "::error::La clé apiKey de firebase-config.js n'est pas valide."; exit 1
+          fi
+          echo "Clé reconnue par Firebase."
