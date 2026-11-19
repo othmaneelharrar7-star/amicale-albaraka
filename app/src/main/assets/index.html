@@ -1134,7 +1134,7 @@ async function runImport(btn){
 
 /* ---------- assistant IA ---------- */
 var GEM=null,sampleFn=null,aiTurns=[],aiBusy=false,aiCtl=null,aiWait={},aiSeq=0;
-var AI_MODELS=["gemini-3.8-flash","gemini-3.5-flash-lite","gemini-2.5-flash"];
+var AI_MODELS=["gemini-3.8-flash","gemini-3.5-flash","gemini-3.5-flash-lite","gemini-3-flash","gemini-2.5-flash","gemini-2.5-flash-lite"];
 var AI_CHIPS=["Résume la situation du projet affiché","Qui n'a pas encore payé toute l'avance ?","Quels chèques sont impayés ?","Exporte la liste des adhérents en Excel","Quels documents expirent bientôt ?"];
 function aiAvailable(){return !!(GEM||sampleFn)}
 function projByName(name){
@@ -1264,13 +1264,17 @@ function aiAnswer(id,ok){
   r(ok);
 }
 function aiErr(e){
-  var m=String((e&&(e.message||e.code))||e||""),c=e&&e.code;
-  if(c==="not_granted"||c==="sampling_disabled")return "L'assistant n'est pas autorisé pour ce compte.";
-  if(c==="rate_limited"||/429|quota|resource.?exhausted|rate/i.test(m))return "Limite d'utilisation atteinte. Réessayez dans une minute.";
-  if(/app.?check/i.test(m))return "Assistant bloqué par App Check. Dans la console Firebase : App Check > onglet API > Firebase AI Logic > « Ne plus appliquer ».";
-  if(/SERVICE_DISABLED|has not been used|not enabled|api-not-enabled|PERMISSION_DENIED|403/i.test(m))return "L'IA n'est pas encore activée dans Firebase : console Firebase > AI Logic > Commencer > Gemini Developer API.";
-  if(/network|fetch|failed to fetch|offline/i.test(m))return "Pas de connexion internet.";
-  return "L'assistant n'a pas pu répondre ("+m.slice(0,140)+").";
+  var m=String((e&&(e.message||e.code))||e||""),c=e&&e.code,st=String((e&&e.customErrorData&&e.customErrorData.status)||"");
+  var hay=m+" "+st+" "+String(c||"");
+  if(c==="not_granted"||c==="sampling_disabled")return {t:"L'assistant n'est pas autorisé pour ce compte."};
+  if(/app.?check/i.test(hay))return {t:"Assistant bloqué par App Check. Console Firebase > App Check > onglet API > Firebase AI Logic > « Ne plus appliquer ».",d:m};
+  if(/SERVICE_DISABLED|has not been used|is disabled|not been enabled|api-not-enabled|firebasevertexai.googleapis.com.*(disabled|enable)/i.test(hay))return {t:"L'IA n'est pas encore activée : console Firebase > AI Logic > Commencer > Gemini Developer API.",d:m};
+  if(/API_KEY|api key|api-key/i.test(hay)&&/invalid|restrict|blocked|not valid/i.test(hay))return {t:"La clé Firebase n'est pas autorisée pour l'IA (restriction de clé API dans Google Cloud).",d:m};
+  if(/\b403\b|PERMISSION_DENIED|forbidden/i.test(hay))return {t:"Accès refusé par Firebase AI Logic. Vérifiez que Gemini Developer API est activé et qu'App Check n'est plus appliqué pour AI Logic.",d:m};
+  if(c==="rate_limited"||/\b429\b|RESOURCE_EXHAUSTED|quota|rate.?limit|too many requests/i.test(hay))return {t:"Limite d'utilisation gratuite atteinte. Réessayez dans une minute.",d:m};
+  if(/not.?found|\b404\b|not supported|does not exist/i.test(hay))return {t:"Aucun modèle Gemini disponible n'a été trouvé pour ce projet.",d:m};
+  if(/network|failed to fetch|offline|ERR_/i.test(hay))return {t:"Pas de connexion internet.",d:m};
+  return {t:"L'assistant n'a pas pu répondre.",d:m};
 }
 async function runGemini(rules,turns){
   var ai=GEM.getAI(GEM.app,{backend:new GEM.GoogleAIBackend()}),lastErr=null;
@@ -1292,7 +1296,7 @@ async function runGemini(rules,turns){
       }
       var txt="";try{txt=res.response.text()}catch(e){}
       return txt||"C'est fait.";
-    }catch(e){lastErr=e;if(!/not.?found|404|is not supported|unsupported|not available|invalid model/i.test(String(e&&e.message)))throw e}
+    }catch(e){lastErr=e;if(!/not.?found|\b404\b|is not supported|unsupported model|not available|does not exist|invalid model|model.*(retired|deprecated)/i.test(String(e&&e.message)))throw e}
   }
   throw lastErr;
 }
@@ -1318,7 +1322,8 @@ async function aiSend(text){
     bubble.classList.remove("think");bubble.innerHTML=aiFormat(reply);
     aiTurns.push({role:"assistant",text:reply});
   }catch(e){
-    bubble.remove();aiTurns.pop();aiAdd("err",esc(aiErr(e)));
+    bubble.remove();aiTurns.pop();var er=aiErr(e);
+    aiAdd("err",esc(er.t)+(er.d?'<details style="margin-top:6px;font-weight:500"><summary>Détail technique</summary><span style="font-size:12px">'+esc(er.d.slice(0,600))+'</span></details>':''));
     Object.keys(aiWait).forEach(function(k){aiAnswer(k,false)});
   }
   aiBusy=false;$("#ai-send").disabled=false;$("#ai-msgs").scrollTop=1e9;
