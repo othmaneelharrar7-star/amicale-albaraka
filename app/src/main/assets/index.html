@@ -1277,6 +1277,7 @@ function aiErr(e){
   if(/API_KEY|api key|api-key/i.test(hay)&&/invalid|restrict|blocked|not valid/i.test(hay))return {t:"La clé Firebase n'est pas autorisée pour l'IA (restriction de clé API dans Google Cloud).",d:m};
   if(/\b403\b|PERMISSION_DENIED|forbidden/i.test(hay))return {t:"Accès refusé par Firebase AI Logic. Vérifiez que Gemini Developer API est activé et qu'App Check n'est plus appliqué pour AI Logic.",d:m};
   if(c==="rate_limited"||/\b429\b|RESOURCE_EXHAUSTED|quota|rate.?limit|too many requests/i.test(hay))return {t:"Limite d'utilisation gratuite atteinte. Réessayez dans une minute.",d:m};
+  if(/high demand|overloaded|UNAVAILABLE|\b50[03]\b/i.test(hay))return {t:"Les serveurs de Gemini sont très chargés en ce moment. Réessayez dans quelques minutes.",d:m};
   if(/not.?found|\b404\b|not supported|does not exist/i.test(hay))return {t:"Aucun modèle Gemini disponible n'a été trouvé pour ce projet.",d:m};
   if(/network|failed to fetch|offline|ERR_/i.test(hay))return {t:"Pas de connexion internet.",d:m};
   return {t:"L'assistant n'a pas pu répondre.",d:m};
@@ -1301,7 +1302,7 @@ async function runGemini(rules,turns){
       }
       var txt="";try{txt=res.response.text()}catch(e){}
       return txt||"C'est fait.";
-    }catch(e){lastErr=e;if(!/not.?found|\b404\b|is not supported|unsupported model|not available|does not exist|invalid model|model.*(retired|deprecated)/i.test(String(e&&e.message)))throw e}
+    }catch(e){lastErr=e;if(!/not.?found|\b404\b|is not supported|unsupported model|not available|does not exist|invalid model|model.*(retired|deprecated)|\b50[03]\b|high demand|overloaded|UNAVAILABLE|try again later/i.test(String(e&&e.message)))throw e}
   }
   throw lastErr;
 }
