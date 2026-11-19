@@ -1493,7 +1493,9 @@ document.addEventListener("click",function(e){
     var kv=($("#ai-key").value||"").trim();
     if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(kv)&&!/^6L[A-Za-z0-9_-]{30,50}$/.test(kv)){aiAdd("err","Ce n'est pas un jeton de débogage (format xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx). Copiez-le avec le bouton de copie de la console Firebase.");return}
     el.disabled=true;
-    GEM.saveSiteKey(kv).then(function(r){aiAdd("ai",r==="restart"?"Jeton enregistré pour tous les membres du bureau. Fermez complètement l'application, rouvrez-la, puis reposez votre question.":"Jeton enregistré pour tous les membres du bureau. Reposez votre question.")})
+    GEM.saveSiteKey(kv).then(function(r){
+      if(r==="restart"){aiAdd("ai","Jeton enregistré pour tous les membres du bureau. L'application redémarre…");setTimeout(function(){location.reload()},1500)}
+      else aiAdd("ai","Jeton enregistré pour tous les membres du bureau. Reposez votre question.")})
       .catch(function(e){el.disabled=false;aiAdd("err","Impossible d'enregistrer la clé : "+esc(String(e&&e.message||e)))});
   }
   else if(a==="file"){e.preventDefault();openFile(el)}
@@ -1592,8 +1594,8 @@ function start(){
       var isDbg=/^[0-9a-f]{8}-/i.test(k),data={updatedAt:new Date().toISOString()};
       data[isDbg?"appCheckDebugToken":"recaptchaSiteKey"]=k;
       await setDoc(doc(fdb,PRE+"meta","config"),data,{merge:true});
-      if(acDone&&acKey!==k)return "restart";
-      await GEM.ensureAppCheck();return "ok";
+      /* le service IA garde l'état App Check du moment où il a été créé : on recharge l'application */
+      return "restart";
     }};
   onAuthStateChanged(auth,function(u){
     unsubs.forEach(function(f){f()});unsubs=[];
