@@ -84,10 +84,21 @@ class MainActivity : AppCompatActivity() {
             ): Boolean {
                 fileCallback?.onReceiveValue(null)
                 fileCallback = callback
+                val wanted = params.acceptTypes.joinToString(",").lowercase()
+                val types = if (wanted.contains("spreadsheet") || wanted.contains(".xls")) {
+                    // Import Excel : certains gestionnaires de fichiers ne donnent pas le bon type aux .xlsx
+                    arrayOf(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        "application/vnd.ms-excel",
+                        "application/octet-stream"
+                    )
+                } else {
+                    arrayOf("application/pdf", "image/*")
+                }
                 val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
                     type = "*/*"
-                    putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/pdf", "image/*"))
+                    putExtra(Intent.EXTRA_MIME_TYPES, types)
                 }
                 return try {
                     filePicker.launch(intent)

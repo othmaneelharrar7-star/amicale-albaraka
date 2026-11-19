@@ -72,6 +72,10 @@ main{padding:2px 16px 120px;display:flex;flex-direction:column;gap:10px}
 .head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
 .head h2{margin:0;font-size:15px;font-weight:800}
 .hbtns{display:flex;gap:6px;flex-wrap:wrap}
+.grp{margin:8px 2px 0;font-size:13px;font-weight:800;color:var(--muted);display:flex;justify-content:space-between}
+.card.free{background:#F6F8FB;box-shadow:none;border:1.5px dashed #B9C4D6}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.imp-list{margin:8px 0 0;padding-left:18px;font-size:12px;color:var(--muted)}
 .btn.xl{display:inline-flex;align-items:center;gap:6px;background:var(--good-soft);color:var(--good);border:1px solid #9CC97E}
 .btn.xl svg{width:18px;height:18px}
 .top .btns{display:flex;gap:8px}
@@ -197,6 +201,7 @@ body.locked header,body.locked main,body.locked nav{display:none}
   <a href="#documents" data-v="documents"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2.5h8.5A1.5 1.5 0 0 1 21 10v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18z"/></svg>Docs</a>
 </div></nav>
 
+<input type="file" id="imp-file" hidden accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
 <div class="overlay" id="detail" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="detail-title">
     <h2 id="detail-title"></h2>
@@ -246,10 +251,14 @@ var SCH={
     {k:"budget",l:"Marché travaux (DH)",t:"number"},
     {k:"ordre",l:"Ordre d'affichage",t:"number"}]},
   adherents:{title:"un adhérent",fields:[
-    {k:"nom",l:"Nom et prénom",t:"text",req:1,full:1},
-    {k:"lot",l:"Lot ou numéro",t:"text",ph:"Ex. B-03"},
+    {k:"nom",l:"Nom et prénom (vide si le lot est disponible)",t:"text",full:1},
+    {k:"lot",l:"Appartement ou lot",t:"text",ph:"Ex. A.2"},
+    {k:"immeuble",l:"Immeuble",t:"text",ph:"Ex. A"},
+    {k:"etage",l:"Étage",t:"text",ph:"Ex. 1er étage"},
     {k:"surface",l:"Surface (m²)",t:"number"},
-    {k:"prix",l:"Prix total (DH)",t:"number",req:1},
+    {k:"prixM2",l:"Prix au m² (DH)",t:"number"},
+    {k:"prix",l:"Prix total (DH, calculé si vide)",t:"number"},
+    {k:"avance",l:"Avance exigée (DH)",t:"number"},
     {k:"dejaPaye",l:"Montant déjà payé (DH)",t:"number",ph:"Ex. 2340000"},
     {k:"tranches",l:"Tranche atteinte (numéro)",t:"number",ph:"Ex. 2"},
     SEC,
@@ -326,6 +335,11 @@ function sections(p){return p?String(p.sections||"").split(",").map(function(s){
 function projets(){return state.projets.slice().sort(function(a,b){return (n(a.ordre)||999)-(n(b.ordre)||999)||(a.nom||"").localeCompare(b.nom||"","fr")})}
 function P(){var l=projets();return l.find(function(p){return p.id===ui.projet})||l[0]||null}
 function inScope(x){var p=P();return !!p&&x.projet===p.id&&(!ui.section||x.section===ui.section)}
+function etageRank(e){var t=String(e||"").toLowerCase();if(!t.trim())return 999;if(/rdc|rez|^0/.test(t))return 0;if(/sous|ss/.test(t))return -1;var m=t.match(/\d+/);return m?+m[0]:500}
+function lotSort(x,y){return etageRank(x.etage)-etageRank(y.etage)||String(x.immeuble||"").localeCompare(String(y.immeuble||""),"fr",{numeric:true})||String(x.lot||"").localeCompare(String(y.lot||""),"fr",{numeric:true})||String(x.nom||"").localeCompare(String(y.nom||""),"fr")}
+function isFree(a){return !String(a.nom||"").trim()}
+function adhName(a){return isFree(a)?"Lot disponible":a.nom}
+function lotLabel(a){return [a.lot,a.etage].filter(Boolean).join(" · ")}
 function paysOf(a){return state.paiements.filter(function(p){return p.adherentId===a.id})}
 function paidOf(a){return n(a.dejaPaye)+sum(paysOf(a))}
 function trancheMap(a){
@@ -483,34 +497,40 @@ function renderAll(){
 /* ---------- Adhérents ---------- */
 function adhHTML(){
   var q=ui.q.toLowerCase();
-  var all=state.adherents.filter(inScope);
-  var tot=sum(all,"prix"),paid=all.reduce(function(t,a){return t+paidOf(a)},0),rest=Math.max(0,tot-paid);
+  var all=state.adherents.filter(inScope),sold=all.filter(function(a){return !isFree(a)}),free=all.length-sold.length;
+  var tot=sum(sold,"prix"),paid=sold.reduce(function(t,a){return t+paidOf(a)},0),rest=Math.max(0,tot-paid);
   var h='<div class="hero ring">'+ring(pctOf(paid,tot),"Encaissé")+'<div class="col"><div><span class="lbl">Total payé</span><span class="big paid num">'+dh(paid)+'</span></div><div><span class="lbl">Reste à payer</span><span class="big rest num">'+dh(rest)+'</span></div></div></div>';
-  h+='<div class="head"><h2>Adhérents ('+all.length+')</h2><span class="hbtns"><button type="button" class="btn xl" data-a="xl" data-id="adherents" aria-label="Télécharger la liste des adhérents en Excel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Excel</button><button type="button" class="btn" data-a="new" data-col="adherents">+ Adhérent</button></span></div>';
-  if(!all.length)return h+emptyBox("Aucun adhérent dans ce projet.","adherents","+ Ajouter un adhérent");
+  h+='<div class="head"><h2>Adhérents ('+sold.length+')'+(free?' · '+free+' lot'+(free>1?'s':'')+' disponible'+(free>1?'s':''):'')+'</h2><span class="hbtns"><button type="button" class="btn xl" data-a="xl" data-id="adherents" aria-label="Télécharger la liste des adhérents en Excel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Excel</button><button type="button" class="btn ghost" data-a="import">Importer Excel</button><button type="button" class="btn" data-a="new" data-col="adherents">+ Adhérent</button></span></div>';
+  if(!all.length)return h+emptyBox("Aucun adhérent dans ce projet. Ajoutez-les un par un, ou importez votre liste Excel.","adherents","+ Ajouter un adhérent",'<button type="button" class="btn ghost" style="margin-left:8px" data-a="import">Importer Excel</button>');
   if(all.length>5)h+='<input type="search" class="search" id="f-q" placeholder="Rechercher un adhérent ou un lot" aria-label="Rechercher un adhérent" value="'+esc(ui.q)+'">';
   h+='<div class="stack" id="list">'+adhRows(all,q)+'</div>';
   return h;
 }
 function tranche(k){return k?"Tranche "+k+" payée":"Aucun paiement"}
 function adhRows(all,q){
-  var a=all.filter(function(x){return !q||((x.nom||"")+" "+(x.lot||"")).toLowerCase().indexOf(q)>=0})
-    .sort(function(x,y){return (x.nom||"").localeCompare(y.nom||"","fr")}),h="";
+  var a=all.filter(function(x){return !q||[x.nom,x.lot,x.immeuble,x.etage,isFree(x)?"disponible":""].join(" ").toLowerCase().indexOf(q)>=0}).sort(lotSort),h="";
   if(!a.length)return '<div class="empty">Aucun adhérent ne correspond à cette recherche.</div>';
+  var grouped=a.some(function(x){return String(x.etage||"").trim()}),cur=null,cnt={};
+  if(grouped)a.forEach(function(x){var g=String(x.etage||"").trim()||"Sans étage";cnt[g]=(cnt[g]||0)+1});
   a.forEach(function(x){
+    if(grouped){var g=String(x.etage||"").trim()||"Sans étage";if(g!==cur){cur=g;h+='<h3 class="grp"><span>'+esc(g)+'</span><span>'+cnt[g]+' lot'+(cnt[g]>1?'s':'')+'</span></h3>'}}
+    if(isFree(x)){
+      h+='<div class="card free"><button type="button" class="row rowbtn" data-a="edit" data-col="adherents" data-id="'+esc(x.id)+'"><span class="av" aria-hidden="true">—</span><span class="mid"><span class="t">'+esc(lotLabel(x)||"Lot")+(x.immeuble?' <span>· Imm. '+esc(x.immeuble)+'</span>':'')+'</span><span class="s num">'+[x.surface?num(x.surface)+" m²":"",x.prixM2?num(x.prixM2)+" DH/m²":"","Prix "+num(x.prix)].filter(Boolean).join(" · ")+'</span></span>'+pill("Disponible","")+'</button><div class="line" style="margin-top:10px"><button type="button" class="btn ghost" style="flex:1" data-a="edit" data-col="adherents" data-id="'+esc(x.id)+'">Attribuer ce lot</button></div></div>';
+      return;
+    }
     var k=trancheOf(x);
     var paid=paidOf(x),prix=n(x.prix),pc=pctOf(paid,prix),rest=Math.max(0,prix-paid),done=prix>0&&rest===0;
-    h+='<div class="card"><button type="button" class="row rowbtn" data-a="detail" data-id="'+esc(x.id)+'"><span class="av" aria-hidden="true">'+ini(x.nom)+'</span><span class="mid"><span class="t">'+esc(x.nom)+(x.lot?' <span>· '+esc(x.lot)+'</span>':'')+'</span><span class="two num"><span class="s">Prix '+num(prix)+'</span><span class="s" style="font-weight:700;color:var(--blue-ink)">'+(done?"Soldé":tranche(k))+'</span></span><span class="bar"><i style="width:'+pc+'%"></i></span><span class="two num"><span class="p">Payé '+num(paid)+'</span><span class="r">Reste '+num(rest)+'</span></span></span>'+pill(pc+" %",done?"ok":"info")+'</button><div class="line" style="margin-top:10px;gap:8px"><button type="button" class="btn ghost" style="flex:1" data-a="detail" data-id="'+esc(x.id)+'">Voir la fiche</button><button type="button" class="btn" style="flex:1" data-a="pay" data-id="'+esc(x.id)+'">+ Paiement</button></div></div>';
+    h+='<div class="card"><button type="button" class="row rowbtn" data-a="detail" data-id="'+esc(x.id)+'"><span class="av" aria-hidden="true">'+ini(x.nom)+'</span><span class="mid"><span class="t">'+esc(x.nom)+(x.lot?' <span>· '+esc(x.lot)+(x.immeuble&&String(x.lot).indexOf(x.immeuble)!==0?' (Imm. '+esc(x.immeuble)+')':'')+'</span>':'')+'</span><span class="two num"><span class="s">Prix '+num(prix)+'</span><span class="s" style="font-weight:700;color:var(--blue-ink)">'+(done?"Soldé":tranche(k))+'</span></span><span class="bar"><i style="width:'+pc+'%"></i></span><span class="two num"><span class="p">Payé '+num(paid)+'</span><span class="r">Reste '+num(rest)+'</span></span></span>'+pill(pc+" %",done?"ok":"info")+'</button><div class="line" style="margin-top:10px;gap:8px"><button type="button" class="btn ghost" style="flex:1" data-a="detail" data-id="'+esc(x.id)+'">Voir la fiche</button><button type="button" class="btn" style="flex:1" data-a="pay" data-id="'+esc(x.id)+'">+ Paiement</button></div></div>';
   });
   return h;
 }
 function renderDetail(){
   var a=state.adherents.find(function(x){return x.id===detailId});
-  if(!a){closeDetail();return}
+  if(!a){if(!impState)closeDetail();return}
   var pays=state.paiements.filter(function(p){return p.adherentId===a.id}).sort(byDateDesc);
   var paid=paidOf(a),prix=n(a.prix),rest=Math.max(0,prix-paid),base=Math.round(n(a.tranches)),tm=trancheMap(a).of;
-  $("#detail-title").textContent=a.nom||"Adhérent";
-  var h='<p class="s" style="margin:-8px 0 12px">'+esc([a.lot,a.section,a.surface?a.surface+" m²":"",a.tel].filter(Boolean).join(" · "))+'</p>';
+  $("#detail-title").textContent=adhName(a);
+  var h='<p class="s" style="margin:-8px 0 12px">'+esc([a.lot,a.immeuble?"Immeuble "+a.immeuble:"",a.etage,a.section,a.surface?a.surface+" m²":"",a.prixM2?num(a.prixM2)+" DH/m²":"",a.avance?"Avance exigée "+dh(a.avance):"",a.tel].filter(Boolean).join(" · "))+'</p>';
   h+='<div class="kpis num"><div class="kpi"><small>Prix total</small><b>'+dh(prix)+'</b></div><div class="kpi"><small>Tranche atteinte</small><b>'+(prix>0&&rest===0?"Soldé":tranche(trancheOf(a)))+'</b></div><div class="kpi"><small>Payé · '+pctOf(paid,prix)+' %</small><b style="color:var(--good)">'+dh(paid)+'</b></div><div class="kpi"><small>Reste à payer</small><b style="color:var(--bad)">'+dh(rest)+'</b></div></div><div class="bar" style="height:8px;margin-bottom:14px"><i style="width:'+pctOf(paid,prix)+'%"></i></div>';
   h+='<div class="head" style="margin-bottom:10px"><h2>Paiements</h2><span class="hbtns"><button type="button" class="btn xl" data-a="xl" data-id="adherent" aria-label="Télécharger la fiche de cet adhérent en Excel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Excel</button><button type="button" class="btn" data-a="new" data-col="paiements">+ Paiement</button></span></div><div class="stack">';
   if(!pays.length&&!n(a.dejaPaye)&&!a.fileId)h+='<div class="empty" style="box-shadow:none;background:var(--bg)">Aucun paiement enregistré.</div>';
@@ -522,7 +542,7 @@ function renderDetail(){
   $("#detail-body").innerHTML=h;
 }
 function openDetail(id){detailId=id;renderDetail();$("#detail").hidden=false}
-function closeDetail(){detailId=null;$("#detail").hidden=true}
+function closeDetail(){detailId=null;impState=null;$("#detail").hidden=true}
 
 /* ---------- Chèques ---------- */
 function chqHTML(){
@@ -664,13 +684,14 @@ function money(v){return Math.round(n(v))}
 function filesTxt(x){return x.fileId?"Oui":""}
 /* a sheet = {name, title, cols:[{h, w?, money?}], rows:[[...]], total:[...]} */
 function shAdherents(){
-  var all=state.adherents.filter(inScope).sort(function(x,y){return (x.section||"").localeCompare(y.section||"","fr")||(x.nom||"").localeCompare(y.nom||"","fr")});
-  var rows=all.map(function(a){var paid=paidOf(a),prix=n(a.prix),rest=Math.max(0,prix-paid);
-    return [a.nom||"",a.lot||"",a.section||"",n(a.surface)||"",money(prix),money(paid),pctOf(paid,prix),money(rest),prix>0&&rest===0?"Soldé":(trancheOf(a)?"Tranche "+trancheOf(a):"Aucun paiement"),a.tel||"",a.note||""]});
-  var tp=sum(all,"prix"),pd=all.reduce(function(t,a){return t+paidOf(a)},0);
-  return {name:"Adhérents",title:"Adhérents · "+scopeLabel(),
-    cols:[{h:"Nom et prénom"},{h:"Lot"},{h:"Partie"},{h:"Surface (m²)"},{h:"Prix total (DH)",money:1},{h:"Payé (DH)",money:1},{h:"Payé (%)"},{h:"Reste à payer (DH)",money:1},{h:"Tranche atteinte"},{h:"Téléphone"},{h:"Note"}],
-    rows:rows,total:["TOTAL ("+all.length+" adhérent"+(all.length>1?"s":"")+")","","","",money(tp),money(pd),pctOf(pd,tp),money(Math.max(0,tp-pd)),"","",""]};
+  var all=state.adherents.filter(inScope).sort(lotSort),sold=all.filter(function(a){return !isFree(a)}),free=all.length-sold.length;
+  var rows=all.map(function(a,i){var paid=paidOf(a),prix=n(a.prix),rest=Math.max(0,prix-paid),fr=isFree(a);
+    return [i+1,a.etage||"",a.immeuble||"",a.lot||"",n(a.surface)||"",n(a.prixM2)||(n(a.surface)?Math.round(prix/n(a.surface)):""),money(prix),n(a.avance)?money(a.avance):"",fr?"":money(paid),fr?"":money(rest),fr?"":a.nom,a.note||"",
+      fr?"Disponible":(prix>0&&rest===0?"Soldé":(trancheOf(a)?"Tranche "+trancheOf(a):"Aucun paiement")),fr?"":pctOf(paid,prix),a.tel||"",a.section||""]});
+  var tp=sum(sold,"prix"),pd=sold.reduce(function(t,a){return t+paidOf(a)},0);
+  return {name:"Adhérents",title:"Liste des adhérents · "+scopeLabel(),
+    cols:[{h:"N°"},{h:"Étage"},{h:"Immeuble"},{h:"Appartement"},{h:"Surface (m²)"},{h:"Prix/m²",money:1},{h:"Prix total",money:1},{h:"Avance",money:1},{h:"Montant payé",money:1},{h:"Reste à payer",money:1},{h:"Nom et prénom (Coordonnées)"},{h:"Commentaire",w:40},{h:"Tranche atteinte"},{h:"Payé (%)"},{h:"Téléphone"},{h:"Partie"}],
+    rows:rows,total:["TOTAL","","",sold.length+" adhérent"+(sold.length>1?"s":"")+(free?" + "+free+" disponible"+(free>1?"s":""):""),"","",money(tp),money(sum(sold,"avance")),money(pd),money(Math.max(0,tp-pd)),"","","",pctOf(pd,tp),"",""]};
 }
 function payRows(a){
   var tm=trancheMap(a).of,base=Math.round(n(a.tranches)),out=[];
@@ -682,17 +703,17 @@ function payRows(a){
 }
 var PAY_COLS=[{h:"Adhérent"},{h:"Lot"},{h:"Tranche"},{h:"Date"},{h:"Mode / origine"},{h:"Montant (DH)",money:1},{h:"N° chèque ou référence"},{h:"Note"},{h:"Photo jointe"}];
 function shPaiements(){
-  var all=state.adherents.filter(inScope).sort(function(x,y){return (x.nom||"").localeCompare(y.nom||"","fr")}),rows=[];
+  var all=state.adherents.filter(inScope).filter(function(a){return !isFree(a)}).sort(lotSort),rows=[];
   all.forEach(function(a){rows=rows.concat(payRows(a))});
   return {name:"Paiements",title:"Paiements des adhérents · "+scopeLabel(),cols:PAY_COLS,rows:rows,
     total:["TOTAL","","","","",money(rows.reduce(function(t,r){return t+n(r[5])},0)),"","",""]};
 }
 function shFiche(a){
   var paid=paidOf(a),prix=n(a.prix),rest=Math.max(0,prix-paid),p=state.projets.find(function(x){return x.id===a.projet});
-  var info=[["Projet",p?p.nom:""],["Partie",a.section||""],["Nom et prénom",a.nom||""],["Lot",a.lot||""],["Surface (m²)",n(a.surface)||""],["Téléphone",a.tel||""],
-    ["Prix total (DH)",money(prix)],["Payé (DH)",money(paid)],["Payé (%)",pctOf(paid,prix)],["Reste à payer (DH)",money(rest)],["Tranche atteinte",prix>0&&rest===0?"Soldé":(trancheOf(a)?"Tranche "+trancheOf(a):"Aucun paiement")],["Note",a.note||""]];
+  var info=[["Projet",p?p.nom:""],["Partie",a.section||""],["Nom et prénom",adhName(a)],["Appartement",a.lot||""],["Immeuble",a.immeuble||""],["Étage",a.etage||""],["Surface (m²)",n(a.surface)||""],["Téléphone",a.tel||""],
+    ["Prix au m² (DH)",n(a.prixM2)?money(a.prixM2):""],["Prix total (DH)",money(prix)],["Avance exigée (DH)",n(a.avance)?money(a.avance):""],["Payé (DH)",money(paid)],["Payé (%)",pctOf(paid,prix)],["Reste à payer (DH)",money(rest)],["Tranche atteinte",prix>0&&rest===0?"Soldé":(trancheOf(a)?"Tranche "+trancheOf(a):"Aucun paiement")],["Note",a.note||""]];
   var pr=payRows(a);
-  return {name:"Fiche",title:"Fiche adhérent · "+(a.nom||""),info:info,cols:PAY_COLS,rows:pr,
+  return {name:"Fiche",title:"Fiche adhérent · "+adhName(a)+(a.lot?" · "+a.lot:""),info:info,cols:PAY_COLS,rows:pr,
     total:["TOTAL PAYÉ","","","","",money(pr.reduce(function(t,r){return t+n(r[5])},0)),"","",""]};
 }
 function shCheques(sens){
@@ -734,11 +755,11 @@ function shDocuments(pid,label){
     rows:all.map(function(d){var st=docStatus(d);return [d.nom||"",d.categorie||"",fdate(d.date),fdate(d.expiration),st?st.t:"",filesTxt(d),d.note||""]})};
 }
 function shResume(){
-  var p=P(),ad=state.adherents.filter(inScope),tp=sum(ad,"prix"),pd=ad.reduce(function(t,a){return t+paidOf(a)},0);
+  var p=P(),all0=state.adherents.filter(inScope),ad=all0.filter(function(a){return !isFree(a)}),tp=sum(ad,"prix"),pd=ad.reduce(function(t,a){return t+paidOf(a)},0);
   var fa=state.factures.filter(inScope),ch=state.cheques.filter(inScope);
   var imp=ch.filter(function(c){return c.statut==="impaye"}),att=ch.filter(function(c){return (c.sens||"recu")==="recu"&&(c.statut||"attente")==="attente"});
   return {name:"Résumé",title:"Résumé · "+scopeLabel(),info:[["Projet",p?p.nom:""],["Partie",ui.section||"Tout le projet"],["Exporté le",fdate(today())],
-    ["Nombre d'adhérents",ad.length],["Total des prix (DH)",money(tp)],["Total payé par les adhérents (DH)",money(pd)],["Payé (%)",pctOf(pd,tp)],["Reste à encaisser (DH)",money(Math.max(0,tp-pd))],
+    ["Nombre d'adhérents",ad.length],["Lots disponibles",all0.length-ad.length],["Total des prix (DH)",money(tp)],["Total payé par les adhérents (DH)",money(pd)],["Payé (%)",pctOf(pd,tp)],["Reste à encaisser (DH)",money(Math.max(0,tp-pd))],
     ["Factures et dépenses (DH)",money(sum(fa))],["Déjà payé aux fournisseurs (DH)",money(sum(fa,"paye"))],["Reste à payer aux fournisseurs (DH)",money(Math.max(0,sum(fa)-sum(fa,"paye")))],
     ["Chèques reçus en attente (DH)",money(sum(att))],["Chèques impayés (DH)",money(sum(imp))]]};
 }
@@ -757,7 +778,7 @@ function buildBook(XL,sheets){
     var ws=XL.utils.aoa_to_sheet(aoa),width=[];
     aoa.forEach(function(r,ri){r.forEach(function(v,ci){
       var len=String(v==null?"":v).length+(typeof v==="number"?4:0);
-      if(ri>0)width[ci]=Math.min(60,Math.max(width[ci]||8,len+2));
+      if(ri>1)width[ci]=Math.min(60,Math.max(width[ci]||8,len+2));
       var cell=ws[XL.utils.encode_cell({r:ri,c:ci})];
       if(cell&&typeof v==="number"&&(sh.cols?(ri>r0&&moneyCols[ci]):/DH/.test(String(r[0]))))cell.z="#,##0";
     })});
@@ -785,7 +806,7 @@ async function deliverFile(name,u8){
 }
 async function exportXl(kind,btn){
   var p=P(),sheets,name;
-  if(kind==="adherent"){var a=state.adherents.find(function(x){return x.id===detailId});if(!a)return;sheets=[shFiche(a)];name="Fiche "+(a.nom||"adhérent")}
+  if(kind==="adherent"){var a=state.adherents.find(function(x){return x.id===detailId});if(!a)return;sheets=[shFiche(a)];name="Fiche "+(isFree(a)?(a.lot||"lot"):a.nom)}
   else if(kind!=="documents"&&!p)return;
   else if(kind==="adherents"){sheets=[shAdherents(),shPaiements()];name="Adhérents "+scopeLabel()}
   else if(kind==="cheques"){sheets=[shCheques("recu"),shCheques("emis")];name="Chèques "+scopeLabel()}
@@ -802,6 +823,122 @@ async function exportXl(kind,btn){
     await deliverFile(cleanName(name)+" "+today()+".xlsx",u8);
   }catch(e){notice("Impossible de créer le fichier Excel. Vérifiez la connexion internet et réessayez.")}
   if(btn){btn.disabled=false;btn.removeAttribute("aria-busy");btn.innerHTML=label}
+}
+
+/* ---------- import Excel ---------- */
+var impState=null;
+function normH(t){return String(t==null?"":t).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/²/g,"2").replace(/\s+/g," ").trim()}
+function headKey(h){
+  var t=normH(h);if(!t)return "";
+  if(/^(n|n°|no|num|numero|nº|#)\.?$/.test(t))return "num";
+  if(/prix.*m2|\/ ?m2|prix unitaire|prix au m/.test(t))return "prixM2";
+  if(/prix total|^prix$|montant total|prix de vente/.test(t))return "prix";
+  if(/avance|acompte/.test(t))return "avance";
+  if(/reste/.test(t))return "reste";
+  if(/paye|verse|encaisse|regle/.test(t))return "paye";
+  if(/^nom|nom &|nom et|prenom|adherent|acquereur|client|beneficiaire/.test(t))return "nom";
+  if(/coordon/.test(t))return "coord";
+  if(/tel|phone|gsm|mobile/.test(t))return "tel";
+  if(/etage|niveau/.test(t))return "etage";
+  if(/immeuble|bloc|batiment/.test(t))return "immeuble";
+  if(/appartement|^lot|bungalow|villa|unite|^appt|^n° lot/.test(t))return "lot";
+  if(/surface|superficie/.test(t))return "surface";
+  if(/comment|remarque|observ|^note/.test(t))return "note";
+  if(/partie|section|residence/.test(t))return "section";
+  return "";
+}
+function parseNum(v,warn){
+  if(typeof v==="number")return v;
+  var t=String(v==null?"":v).trim();if(!t||t==="-")return 0;
+  var u=t.replace(/(\d)[oO]/g,"$10").replace(/[oO](\d)/g,"0$1").replace(/[\s  ]/g,"").replace(/dh|mad/ig,"");
+  if(u.indexOf(",")>=0&&u.indexOf(".")>=0)u=u.replace(/,/g,"");
+  else if(/^-?\d{1,3}(,\d{3})+$/.test(u))u=u.replace(/,/g,"");
+  else u=u.replace(",",".");
+  var x=parseFloat(u);
+  if(isNaN(x)||!/^-?[\d.]+$/.test(u)){warn&&warn("« "+t+" » n'est pas un montant lisible : ignoré");return 0}
+  if(u!==t.replace(/[\s  ]/g,"").replace(/,/g,"")&&/[oO]/.test(t))warn&&warn("« "+t+" » lu comme "+num(x));
+  return x;
+}
+function readSheet(XL,ws,name){
+  var rows=XL.utils.sheet_to_json(ws,{header:1,raw:true,defval:""}),hi=-1,map=null;
+  for(var r=0;r<Math.min(rows.length,20);r++){
+    var m={},keys=rows[r].map(headKey);
+    keys.forEach(function(k,i){if(k&&m[k]==null)m[k]=i});
+    if(m.lot!=null&&(m.prix!=null||m.surface!=null||m.prixM2!=null)){hi=r;map=m;break}
+  }
+  if(hi<0)return null;
+  if(map.nom==null&&map.coord!=null){map.nom=map.coord;map.coord=null}
+  if(map.tel==null&&map.coord!=null)map.tel=map.coord;
+  var out=[],warns=[];
+  for(var i=hi+1;i<rows.length;i++){
+    var row=rows[i],g=function(k){return map[k]==null?"":row[map[k]]},line=i+1;
+    var lot=String(g("lot")).trim(),nom=String(g("nom")).replace(/\s+/g," ").trim(),first=normH(row[0]);
+    if(/^total/.test(first)||(!lot&&!nom))continue;
+    var w=function(msg){warns.push("Ligne "+line+(lot?" ("+lot+")":"")+" : "+msg)};
+    var rec={nom:nom,lot:lot,immeuble:String(g("immeuble")).trim(),etage:String(g("etage")).trim(),surface:Math.round(parseNum(g("surface"),w)*100)/100,
+      prixM2:Math.round(parseNum(g("prixM2"),w)),prix:Math.round(parseNum(g("prix"),w)),avance:Math.round(parseNum(g("avance"),w)),dejaPaye:Math.round(parseNum(g("paye"),w)),
+      tel:String(g("tel")).trim(),note:String(g("note")).trim(),section:String(g("section")).trim()};
+    if(!rec.prix&&rec.prixM2&&rec.surface)rec.prix=Math.round(rec.prixM2*rec.surface);
+    if(!rec.prixM2&&rec.prix&&rec.surface)rec.prixM2=Math.round(rec.prix/rec.surface);
+    if(!rec.nom&&rec.dejaPaye)w("montant payé sans nom d'adhérent");
+    out.push(rec);
+  }
+  return {name:name,recs:out,warns:warns};
+}
+async function startImport(file){
+  if(!P()){notice("Choisissez d'abord un projet.");return}
+  try{
+    var XL=await loadXlsx(),wb=XL.read(new Uint8Array(await file.arrayBuffer()),{type:"array"}),found=[];
+    wb.SheetNames.forEach(function(sn){var r=readSheet(XL,wb.Sheets[sn],sn);if(r&&r.recs.length)found.push(r)});
+    if(!found.length){notice("Aucune liste reconnue dans ce fichier. Il faut au moins les colonnes « Appartement » et « Prix total » (ou « Surface »).");return}
+    found.sort(function(a,b){return b.recs.length-a.recs.length});
+    impState={file:file.name,sheets:found,pick:0,free:true,busy:false};
+    detailId=null;renderImport();$("#detail").hidden=false;
+  }catch(e){notice("Impossible de lire ce fichier Excel.")}
+}
+function impMatch(rec,p){
+  var key=normH(rec.lot);
+  return state.adherents.find(function(a){return a.projet===p.id&&(key?normH(a.lot)===key:(rec.nom&&normH(a.nom)===normH(rec.nom)))});
+}
+function renderImport(){
+  var st=impState,p=P();if(!st||!p)return;
+  var sh=st.sheets[st.pick],recs=sh.recs.filter(function(r){return st.free||r.nom}),named=sh.recs.filter(function(r){return r.nom}).length;
+  var upd=recs.filter(function(r){return impMatch(r,p)}).length,paid=sum(recs,"dejaPaye");
+  $("#detail-title").textContent="Importer la liste Excel";
+  var h='<p class="s" style="margin:-8px 0 12px">'+esc(st.file)+' → projet <strong>'+esc(p.nom)+'</strong>'+(ui.section?' · '+esc(ui.section):'')+'</p>';
+  if(st.sheets.length>1){
+    h+='<div class="fields"><label class="full" for="imp-sheet">Feuille à importer<select id="imp-sheet">';
+    st.sheets.forEach(function(x,i){h+='<option value="'+i+'"'+(i===st.pick?" selected":"")+'>'+esc(x.name)+' ('+x.recs.length+' lots, '+x.recs.filter(function(r){return r.nom}).length+' avec un nom)</option>'});
+    h+='</select></label></div>';
+  }
+  h+='<div class="kpis num" style="margin-top:12px"><div class="kpi"><small>Lots dans la feuille</small><b>'+sh.recs.length+'</b></div><div class="kpi"><small>Avec un adhérent</small><b>'+named+'</b></div><div class="kpi"><small>Montant payé total</small><b>'+dh(paid)+'</b></div><div class="kpi"><small>Déjà dans l\'application</small><b>'+upd+' (mis à jour)</b></div></div>';
+  h+='<div class="fields"><label class="check full" for="imp-free"><input id="imp-free" type="checkbox"'+(st.free?" checked":"")+'>Importer aussi les '+(sh.recs.length-named)+' lots sans nom (affichés « Disponible »)</label></div>';
+  if(sh.warns.length)h+='<div class="notice" style="margin-top:10px">À vérifier après l\'import ('+sh.warns.length+') :<ul class="imp-list">'+sh.warns.slice(0,12).map(function(w){return "<li>"+esc(w)+"</li>"}).join("")+(sh.warns.length>12?"<li>…</li>":"")+'</ul></div>';
+  h+='<p class="s" style="margin:12px 0 0">Les montants payés deviennent la tranche 1 (« Déjà payé »). Un lot déjà présent (même appartement) est mis à jour sans toucher aux paiements ajoutés dans l\'application.</p>';
+  h+='<p class="err" id="imp-err" role="alert"></p><div class="actions"><span class="sp"></span><button type="button" class="btn ghost" data-a="close-detail">Annuler</button><button type="button" class="btn" id="imp-go" data-a="import-go">Importer '+recs.length+' lots</button></div>';
+  $("#detail-body").innerHTML=h;
+}
+async function runImport(btn){
+  var st=impState,p=P();if(!st||!p||st.busy)return;
+  var recs=st.sheets[st.pick].recs.filter(function(r){return st.free||r.nom}),done=0,errEl=$("#imp-err");
+  st.busy=true;btn.disabled=true;
+  try{
+    for(var i=0;i<recs.length;i++){
+      var r=recs[i],old=impMatch(r,p),d=Object.assign({},r);
+      d.section=r.section||ui.section||"";d.projet=p.id;d.tranches=r.dejaPaye>0?1:0;
+      if(old){
+        var keep={},hasPays=paysOf(old).length>0;
+        Object.keys(old).forEach(function(k){if(k!=="id")keep[k]=old[k]});
+        ["nom","tel","note","section","immeuble","etage"].forEach(function(k){if(!d[k]&&keep[k])d[k]=keep[k]});
+        if(hasPays){d.dejaPaye=n(keep.dejaPaye);d.tranches=n(keep.tranches)}
+        d=Object.assign(keep,d);d.createdAt=old.createdAt||new Date().toISOString();
+        await save("adherents",old.id,d);
+      }else{d.createdAt=new Date().toISOString();await save("adherents",newId("adherents"),d)}
+      done++;btn.textContent="Import… "+done+"/"+recs.length;
+    }
+    closeDetail();notice("");renderAll();
+    notice(done+" lots importés dans "+p.nom+". Vérifiez la liste, puis supprimez le fichier Excel du téléphone si vous voulez.");
+  }catch(e){errEl.textContent=errMsg(e)+" ("+done+" lots déjà importés : relancez l'import, ils seront mis à jour sans doublon.)";btn.disabled=false;st.busy=false;btn.textContent="Reprendre l'import"}
 }
 
 /* ---------- form sheet ---------- */
@@ -868,6 +1005,11 @@ async function submitForm(e){
     }else data[f.k]=raw;
   }
   if(col!=="projets")data.projet=sheet.ctx.projet;
+  if(col==="adherents"){
+    if(!data.prix&&data.prixM2&&data.surface)data.prix=Math.round(data.prixM2*data.surface);
+    if(!data.nom&&!data.lot){err.textContent="Indiquez le nom de l'adhérent ou le numéro de l'appartement.";return}
+    if(!data.prix){err.textContent="Indiquez le prix total, ou le prix au m² et la surface.";return}
+  }
   if(col==="paiements"){data.adherentId=sheet.ctx.adherentId||"";if(!data.adherentId){err.textContent="Ouvrez la fiche d'un adhérent pour ajouter un paiement.";return}}
   data.createdAt=old&&old.createdAt||new Date().toISOString();
   var fi=form.elements.file,file=fi&&fi.files&&fi.files[0],rm=form.elements.rm&&form.elements.rm.checked,toDelete=null;
@@ -934,6 +1076,8 @@ document.addEventListener("click",function(e){
   else if(a==="detail")openDetail(id);
   else if(a==="pay")openSheet("paiements",null,id);
   else if(a==="xl")exportXl(id,el);
+  else if(a==="import"){var f=$("#imp-file");f.value="";f.click()}
+  else if(a==="import-go")runImport(el);
   else if(a==="file"){e.preventDefault();openFile(el)}
   else if(a==="close-detail")closeDetail();
   else if(a==="close")closeSheet();
@@ -954,6 +1098,12 @@ document.addEventListener("input",function(e){
   refreshList();
 });
 $("#form").addEventListener("submit",submitForm);
+$("#imp-file").addEventListener("change",function(e){var f=e.target.files&&e.target.files[0];if(f)startImport(f)});
+document.addEventListener("change",function(e){
+  if(!impState)return;
+  if(e.target.id==="imp-sheet"){impState.pick=+e.target.value;renderImport()}
+  else if(e.target.id==="imp-free"){impState.free=e.target.checked;renderImport()}
+});
 function authMsg(ex){
   var c=ex&&ex.code;
   if(c==="auth/network-request-failed")return "Pas de connexion internet.";

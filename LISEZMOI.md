@@ -28,6 +28,15 @@ onglet **Actions** > dernière tâche « Construire l'APK » > téléchargez `am
 Cet APK est une version « debug ». Pour installer une mise à jour, désinstallez d'abord l'ancienne version
 (les données restent dans Firebase).
 
+## Importer une liste Excel
+
+Dans « Adhérents », le bouton « Importer Excel » lit un fichier .xlsx dont une ligne d'en-tête contient au moins
+« Appartement » et « Prix total » (ou « Surface »). Colonnes reconnues : Étage, Immeuble, Appartement, Surface,
+Prix/m², Prix total, Avance, Montant payé, Nom / Coordonnées, Téléphone, Commentaire.
+Les lots sans nom sont importés comme « Disponible ». Réimporter met à jour les lots existants (même appartement),
+sans doublon et sans toucher aux paiements saisis dans l'application.
+L'export Excel des adhérents reprend ces mêmes colonnes : il peut être réimporté.
+
 ## Exports Excel
 
 Chaque écran a un bouton vert « Excel » : liste des adhérents (avec tous les paiements), fiche d'un adhérent,
