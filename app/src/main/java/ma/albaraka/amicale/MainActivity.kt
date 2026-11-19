@@ -1,9 +1,14 @@
 package ma.albaraka.amicale
 
 import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
+import android.content.ContentValues
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.MediaStore
 import android.util.Base64
 import android.webkit.JavascriptInterface
 import android.webkit.ValueCallback
@@ -114,6 +119,16 @@ class MainActivity : AppCompatActivity() {
 
     /** Appelé par la page pour ouvrir un fichier joint (PDF ou image) dans une autre application. */
     private inner class Bridge {
+        /** Appelé par la page pour enregistrer un export Excel dans Téléchargements. */
+        @JavascriptInterface
+        fun saveFile(name: String, mime: String, base64: String) {
+            try {
+                saveAndOpen(name, mime, Base64.decode(base64, Base64.DEFAULT))
+            } catch (e: Exception) {
+                runOnUiThread { toast("Impossible d'enregistrer le fichier.") }
+            }
+        }
+
         @JavascriptInterface
         fun openFile(name: String, mime: String, base64: String) {
             try {
@@ -135,6 +150,57 @@ class MainActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 runOnUiThread { toast("Impossible d'ouvrir le fichier.") }
+            }
+        }
+    }
+
+    /** Enregistre un fichier créé par la page (export Excel) puis l'ouvre. */
+    private fun saveAndOpen(name: String, mime: String, bytes: ByteArray) {
+        val safe = name.replace(Regex("[\\\\/:*?\"<>|]"), "-").trim().takeLast(120).ifEmpty { "export.xlsx" }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, safe)
+                put(MediaStore.MediaColumns.MIME_TYPE, mime)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Amicale Albaraka")
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: throw IllegalStateException("insert")
+            contentResolver.openOutputStream(uri)?.use { it.write(bytes) } ?: throw IllegalStateException("stream")
+            values.clear()
+            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+            contentResolver.update(uri, values, null, null)
+            runOnUiThread {
+                toast("Fichier enregistré dans Téléchargements > Amicale Albaraka")
+                openOrShare(uri, mime)
+            }
+        } else {
+            val dir = File(cacheDir, "fichiers")
+            dir.mkdirs()
+            val file = File(dir, safe)
+            file.writeBytes(bytes)
+            val uri = FileProvider.getUriForFile(this, "$packageName.fichiers", file)
+            runOnUiThread { openOrShare(uri, mime) }
+        }
+    }
+
+    private fun openOrShare(uri: Uri, mime: String) {
+        val view = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, mime)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        try {
+            startActivity(view)
+        } catch (e: ActivityNotFoundException) {
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = mime
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            try {
+                startActivity(Intent.createChooser(send, "Enregistrer ou envoyer le fichier Excel"))
+            } catch (e2: Exception) {
+                toast("Installez Excel ou Google Sheets pour ouvrir ce fichier.")
             }
         }
     }

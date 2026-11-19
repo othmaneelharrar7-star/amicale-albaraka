@@ -28,6 +28,12 @@ onglet **Actions** > dernière tâche « Construire l'APK » > téléchargez `am
 Cet APK est une version « debug ». Pour installer une mise à jour, désinstallez d'abord l'ancienne version
 (les données restent dans Firebase).
 
+## Exports Excel
+
+Chaque écran a un bouton vert « Excel » : liste des adhérents (avec tous les paiements), fiche d'un adhérent,
+chèques, factures et dépenses, travaux, documents. Le bouton vert en haut exporte tout le projet sélectionné.
+Le fichier est enregistré dans Téléchargements > Amicale Albaraka puis ouvert avec Excel ou Google Sheets.
+
 ## 3. Donner ou retirer l'accès à quelqu'un
 
 - Donner : Authentication > Users > Ajouter un utilisateur, puis envoyez-lui l'APK, son email et son mot de passe.
@@ -39,5 +45,6 @@ Toute personne connectée peut tout voir et tout modifier.
 ## Où modifier quoi
 
 - `app/src/main/assets/index.html` : toute l'application (écrans, catégories, textes).
+- `app/src/main/assets/xlsx.mini.min.js` : bibliothèque SheetJS (licence Apache 2.0) pour créer les fichiers Excel.
 - `app/src/main/assets/firebase-config.js` : la liaison avec votre projet Firebase.
 - `app/src/main/java/ma/albaraka/amicale/MainActivity.kt` : l'enveloppe Android.
