@@ -28,6 +28,20 @@ onglet **Actions** > dernière tâche « Construire l'APK » > téléchargez `am
 Cet APK est une version « debug ». Pour installer une mise à jour, désinstallez d'abord l'ancienne version
 (les données restent dans Firebase).
 
+## Assistant IA (bouton « Assistant »)
+
+L'assistant répond aux questions sur les projets (en darija, français ou arabe) et peut enregistrer un paiement,
+attribuer un lot, ajouter un chèque ou une facture, changer le statut d'un chèque, ou créer un fichier Excel.
+Il montre toujours un résumé et n'enregistre rien sans que vous appuyiez sur « Confirmer ».
+Il utilise Gemini via Firebase AI Logic (gratuit avec le forfait Spark, avec des limites d'utilisation).
+
+À activer une seule fois dans la console Firebase :
+1. **AI Logic** (menu Services d'IA) > Commencer > choisissez **Gemini Developer API**.
+2. **App Check** > onglet **API** > **Firebase AI Logic** > **Ne plus appliquer** (sinon l'assistant est bloqué,
+   car l'application n'utilise pas App Check).
+
+Les modèles essayés, dans l'ordre, sont listés dans `AI_MODELS` dans `index.html`.
+
 ## Importer une liste Excel
 
 Dans « Adhérents », le bouton « Importer Excel » lit un fichier .xlsx dont une ligne d'en-tête contient au moins
@@ -54,6 +68,7 @@ Toute personne connectée peut tout voir et tout modifier.
 ## Où modifier quoi
 
 - `app/src/main/assets/index.html` : toute l'application (écrans, catégories, textes).
-- `app/src/main/assets/xlsx.mini.min.js` : bibliothèque SheetJS (licence Apache 2.0) pour créer les fichiers Excel.
+- `app/src/main/assets/xlsx.min.js` : bibliothèque xlsx-js-style (licence Apache 2.0) pour lire et créer les fichiers Excel mis en forme.
+- `app/src/main/assets/firebase.js` : SDK Firebase 13.4.0 (connexion, base de données, IA) regroupé en un seul fichier.
 - `app/src/main/assets/firebase-config.js` : la liaison avec votre projet Firebase.
 - `app/src/main/java/ma/albaraka/amicale/MainActivity.kt` : l'enveloppe Android.

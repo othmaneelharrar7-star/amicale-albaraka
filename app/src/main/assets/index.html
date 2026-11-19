@@ -75,6 +75,28 @@ main{padding:2px 16px 120px;display:flex;flex-direction:column;gap:10px}
 .grp{margin:8px 2px 0;font-size:13px;font-weight:800;color:var(--muted);display:flex;justify-content:space-between}
 .card.free{background:#F6F8FB;box-shadow:none;border:1.5px dashed #B9C4D6}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
+.fab{position:fixed;right:16px;bottom:calc(92px + env(safe-area-inset-bottom,0px));z-index:7;height:52px;padding:0 18px 0 14px;border:0;border-radius:99px;background:linear-gradient(135deg,#2457A8,#0B2A5E);color:#fff;font-weight:800;font-size:14px;display:flex;align-items:center;gap:8px;box-shadow:0 10px 24px rgba(10,31,68,.35)}
+.fab svg{width:22px;height:22px}
+.fab[hidden]{display:none}
+body.locked .fab{display:none}
+.chat{display:flex;flex-direction:column;height:min(86vh,760px);padding-bottom:12px}
+.chat .msgs{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px 10px}
+.msg{max-width:88%;padding:10px 13px;border-radius:18px;font-size:14px;line-height:1.45;overflow-wrap:anywhere}
+.msg.me{align-self:flex-end;background:var(--blue);color:#fff;border-bottom-right-radius:6px}
+.msg.ai{align-self:flex-start;background:var(--bg);border-bottom-left-radius:6px}
+.msg.ai ul{margin:6px 0;padding-left:18px}
+.msg.err{align-self:stretch;background:var(--bad-soft);color:var(--bad);font-weight:600;max-width:none}
+.msg.think{color:var(--muted);font-style:italic}
+.confirm{align-self:stretch;border:1.5px solid var(--blue);border-radius:16px;padding:12px;background:#fff;display:flex;flex-direction:column;gap:10px}
+.confirm b{font-size:14px}
+.confirm .row2{display:flex;gap:8px}
+.confirm .row2 .btn{flex:1}
+.confirm.done{border-color:var(--line);opacity:.8}
+.chips2{display:flex;gap:6px;overflow-x:auto;padding:2px 0 8px;scrollbar-width:none}
+.chips2 button{flex:none;min-height:40px;padding:0 12px;border-radius:99px;border:1px solid var(--line);background:#fff;font-size:12.5px;font-weight:600;color:var(--ink)}
+.composer{display:flex;gap:8px;align-items:flex-end}
+.composer textarea{flex:1;min-height:48px;max-height:120px;resize:none;border:1px solid #7C8AA3;border-radius:16px;padding:12px 14px;font-size:16px;background:#fff}
+.composer .btn{height:48px}
 .imp-list{margin:8px 0 0;padding-left:18px;font-size:12px;color:var(--muted)}
 .btn.xl{display:inline-flex;align-items:center;gap:6px;background:var(--good-soft);color:var(--good);border:1px solid #9CC97E}
 .btn.xl svg{width:18px;height:18px}
@@ -201,6 +223,20 @@ body.locked header,body.locked main,body.locked nav{display:none}
   <a href="#documents" data-v="documents"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2.5h8.5A1.5 1.5 0 0 1 21 10v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18z"/></svg>Docs</a>
 </div></nav>
 
+<button type="button" class="fab" id="fab-ai" hidden data-a="ai-open" aria-label="Ouvrir l'assistant IA"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.6L18.5 9.4l-4.7 1.8L12 16l-1.8-4.8L5.5 9.4l4.7-1.8z"/><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg>Assistant</button>
+<div class="overlay" id="ai" hidden>
+  <div class="sheet chat" role="dialog" aria-modal="true" aria-labelledby="ai-title">
+    <div class="line"><h2 id="ai-title" style="margin:0">Assistant Albaraka</h2><span class="hbtns"><button type="button" class="btn ghost" data-a="ai-new">Nouvelle discussion</button><button type="button" class="btn ghost" data-a="ai-close">Fermer</button></span></div>
+    <p class="s" id="ai-sub" style="margin:4px 0 8px">Posez une question sur vos projets, ou demandez-lui d'enregistrer un paiement, un chèque, une facture, ou de préparer un fichier Excel.</p>
+    <div class="msgs" id="ai-msgs" aria-live="polite"></div>
+    <div class="chips2" id="ai-chips"></div>
+    <form class="composer" id="ai-form" novalidate>
+      <label for="ai-in" style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">Message pour l'assistant</label>
+      <textarea id="ai-in" rows="1" placeholder="Ex. : chkoun ma khlsch l'avance f Sid El Abed ?"></textarea>
+      <button type="submit" class="btn" id="ai-send">Envoyer</button>
+    </form>
+  </div>
+</div>
 <input type="file" id="imp-file" hidden accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
 <div class="overlay" id="detail" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="detail-title">
@@ -224,9 +260,7 @@ body.locked header,body.locked main,body.locked nav{display:none}
 </div>
 
 <script type="module">
-import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut,sendPasswordResetEmail} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import {getFirestore,collection,doc,setDoc,getDoc,deleteDoc,onSnapshot,Bytes} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {initializeApp,getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut,sendPasswordResetEmail,getFirestore,collection,doc,setDoc,getDoc,deleteDoc,onSnapshot,Bytes,getAI,getGenerativeModel,GoogleAIBackend} from "./firebase.js";
 import {firebaseConfig} from "./firebase-config.js";
 (function(){
 "use strict";
@@ -313,7 +347,7 @@ var state={},loaded={};
 COLS.forEach(function(c){state[c]=[];loaded[c]=false});
 var ui={view:"adherents",projet:"",section:"",chq:"recu",scope:"projet",q:"",dcat:""};
 var db=null,assets=null,downloads=null,local=false,sheet=null,detailId=null;
-var XLSX_SRC="./xlsx.mini.min.js";
+var XLSX_SRC="./xlsx.min.js";
 var standalone=true,fileUrls={},auth=null,fdb=null,unsubs=[],PRE="am_",MAXB=950*1024;
 var $=function(s){return document.querySelector(s)};
 
@@ -763,27 +797,73 @@ function shResume(){
     ["Factures et dépenses (DH)",money(sum(fa))],["Déjà payé aux fournisseurs (DH)",money(sum(fa,"paye"))],["Reste à payer aux fournisseurs (DH)",money(Math.max(0,sum(fa)-sum(fa,"paye")))],
     ["Chèques reçus en attente (DH)",money(sum(att))],["Chèques impayés (DH)",money(sum(imp))]]};
 }
+/* Mise en forme Excel : couleurs du logo, police lisible, bordures, totaux en gras */
+var XS={navy:"0B2A5E",blue:"2457A8",light:"E3ECFA",zebra:"F4F7FB",line:"C9D3E3",green:"2F6B14",greenBg:"E6F2DD",red:"B3141C",redBg:"FDE3E4",grey:"6B7689"};
+function xBorder(c){var b={style:"thin",color:{rgb:c||XS.line}};return {top:b,bottom:b,left:b,right:b}}
+function xFont(o){return Object.assign({name:"Calibri",sz:11,color:{rgb:"0A1F44"}},o||{})}
+function statusStyle(v){
+  var t=String(v||"");
+  if(/^(Soldé|Payée|Encaissé|Oui)$/.test(t))return {color:{rgb:XS.green},bold:true};
+  if(/^(Impayé|À valider|Expiré|Non)$|^Expire/.test(t))return {color:{rgb:XS.red},bold:true};
+  if(/^Disponible$/.test(t))return {color:{rgb:XS.grey},italic:true};
+  if(/^Tranche|^Partielle|^En attente|^Remis/.test(t))return {color:{rgb:XS.blue},bold:true};
+  return null;
+}
 function buildBook(XL,sheets){
   var wb=XL.utils.book_new(),used={};
   sheets.forEach(function(sh){
-    var aoa=[[sh.title],[]],moneyCols={},r0;
-    if(sh.info){sh.info.forEach(function(r){aoa.push(r)});if(sh.cols)aoa.push([])}
+    var sub="Amicale Albaraka · exporté le "+fdate(today());
+    var aoa=[[sh.title],[sub]],r0=-1,infoStart=-1,infoEnd=-1,ncols=sh.cols?sh.cols.length:2;
+    if(sh.info){aoa.push([]);infoStart=aoa.length;sh.info.forEach(function(r){aoa.push(r)});infoEnd=aoa.length-1}
     if(sh.cols){
-      r0=aoa.length;aoa.push(sh.cols.map(function(c){return c.h}));
-      sh.cols.forEach(function(c,i){if(c.money)moneyCols[i]=1});
+      aoa.push([]);r0=aoa.length;aoa.push(sh.cols.map(function(c){return c.h}));
       sh.rows.forEach(function(r){aoa.push(r)});
       if(!sh.rows.length)aoa.push(["(aucune ligne)"]);
       if(sh.total)aoa.push(sh.total);
     }
-    var ws=XL.utils.aoa_to_sheet(aoa),width=[];
-    aoa.forEach(function(r,ri){r.forEach(function(v,ci){
-      var len=String(v==null?"":v).length+(typeof v==="number"?4:0);
-      if(ri>1)width[ci]=Math.min(60,Math.max(width[ci]||8,len+2));
-      var cell=ws[XL.utils.encode_cell({r:ri,c:ci})];
-      if(cell&&typeof v==="number"&&(sh.cols?(ri>r0&&moneyCols[ci]):/DH/.test(String(r[0]))))cell.z="#,##0";
-    })});
+    var ws=XL.utils.aoa_to_sheet(aoa),width=[],last=aoa.length-1,hasTotal=!!(sh.cols&&sh.total);
+    var isMoney={},isPct={},isStatus={},isPaid={},isRest={},isCenter={},isDec={};
+    if(sh.cols)sh.cols.forEach(function(c,i){if(c.money)isMoney[i]=1;if(/\(%\)/.test(c.h))isPct[i]=1;if(/statut|tranche|valid/i.test(c.h))isStatus[i]=1;if(/^montant payé|^payé/i.test(c.h))isPaid[i]=1;if(/^reste/i.test(c.h))isRest[i]=1;if(/^(N°|Étage|Immeuble|Appartement|Lot|Tranche|Date|Échéance|Expire|Photo|Fichier|Validée|Partie)/i.test(c.h))isCenter[i]=1;if(/surface/i.test(c.h))isDec[i]=1});
+    for(var ri=0;ri<aoa.length;ri++){
+      var row=aoa[ri],nc=Math.max(row.length,(ri>=r0&&r0>=0)?ncols:row.length);
+      for(var ci=0;ci<nc;ci++){
+        var v=row[ci],ref=XL.utils.encode_cell({r:ri,c:ci});
+        if(ri>1&&!(hasTotal&&ri===last)){var len=String(v==null?"":v).length+(typeof v==="number"?3:0);width[ci]=Math.min(48,Math.max(width[ci]||9,len+3))}
+        if(!ws[ref]){if(ri>r0&&r0>=0&&ci<ncols)ws[ref]={t:"s",v:""};else continue}
+        var cell=ws[ref],st={font:xFont(),alignment:{vertical:"center"}};
+        if(ri===0)st={font:xFont({sz:16,bold:true,color:{rgb:XS.navy}}),alignment:{vertical:"center"}};
+        else if(ri===1)st={font:xFont({sz:10,italic:true,color:{rgb:XS.grey}})};
+        else if(ri>=infoStart&&ri<=infoEnd&&infoStart>=0){
+          st=ci===0?{font:xFont({bold:true,color:{rgb:XS.navy}}),fill:{patternType:"solid",fgColor:{rgb:XS.light}},border:xBorder()}
+                   :{font:xFont({bold:true,sz:12}),border:xBorder(),alignment:{horizontal:typeof v==="number"?"right":"left"}};
+          if(typeof v==="number"&&/DH/.test(String(row[0])))st.numFmt="#,##0";
+          if(typeof v==="number"&&/%/.test(String(row[0])))st.numFmt='0" %"';
+          var ss=statusStyle(v);if(ci===1&&ss)st.font=xFont(Object.assign({sz:12},ss));
+        }
+        else if(ri===r0){st={font:xFont({bold:true,color:{rgb:"FFFFFF"}}),fill:{patternType:"solid",fgColor:{rgb:XS.navy}},alignment:{horizontal:"center",vertical:"center",wrapText:true},border:xBorder(XS.navy)}}
+        else if(r0>=0&&ri>r0){
+          var tot=hasTotal&&ri===last,zebra=(ri-r0)%2===0,free=sh.name==="Adhérents"&&!tot&&String(row[12])==="Disponible";
+          st={font:xFont(tot?{bold:true,color:{rgb:XS.navy}}:{}),border:xBorder(),alignment:{vertical:"center",wrapText:sh.cols[ci]&&sh.cols[ci].w?true:false}};
+          if(tot){st.fill={patternType:"solid",fgColor:{rgb:XS.light}};st.border.top={style:"medium",color:{rgb:XS.navy}}}
+          else if(zebra)st.fill={patternType:"solid",fgColor:{rgb:XS.zebra}};
+          if(typeof v==="number"){st.alignment.horizontal="right";if(isMoney[ci])st.numFmt="#,##0";if(isPct[ci])st.numFmt='0" %"';if(isDec[ci])st.numFmt="0.00"}
+          if(isCenter[ci]&&!tot)st.alignment.horizontal="center";
+          if(!tot){
+            if(isPaid[ci]&&typeof v==="number")st.font=xFont({color:{rgb:XS.green},bold:true});
+            if(isRest[ci]&&typeof v==="number"&&v>0)st.font=xFont({color:{rgb:XS.red},bold:true});
+            if(isStatus[ci]){var s2=statusStyle(v);if(s2)st.font=xFont(s2)}
+            if(free)st.font=xFont({color:{rgb:XS.grey},italic:true});
+          }
+        }
+        if(st.numFmt)cell.z=st.numFmt;
+        cell.s=st;
+      }
+    }
     if(sh.cols)sh.cols.forEach(function(c,i){if(c.w)width[i]=c.w});
+    if(sh.info&&!sh.cols){width[0]=Math.max(width[0]||10,34);width[1]=Math.max(width[1]||10,22)}
     ws["!cols"]=width.map(function(w){return {wch:w||10}});
+    var rows=[];rows[0]={hpt:26};rows[1]={hpt:16};if(r0>=0)rows[r0]={hpt:34};ws["!rows"]=rows;
+    ws["!merges"]=[{s:{r:0,c:0},e:{r:0,c:Math.max(1,ncols-1)}},{s:{r:1,c:0},e:{r:1,c:Math.max(1,ncols-1)}}];
     if(sh.cols&&sh.rows.length)ws["!autofilter"]={ref:XL.utils.encode_range({s:{r:r0,c:0},e:{r:r0+sh.rows.length,c:sh.cols.length-1}})};
     var nm=cleanName(sh.name).replace(/[\[\]]/g,"").slice(0,31)||"Feuille",k=2;
     while(used[nm])nm=nm.slice(0,28)+" "+(k++);used[nm]=1;
@@ -819,7 +899,7 @@ async function exportXl(kind,btn){
   if(btn){btn.disabled=true;btn.setAttribute("aria-busy","true")}
   try{
     var XL=await loadXlsx();
-    var u8=new Uint8Array(XL.write(buildBook(XL,sheets),{type:"array",bookType:"xlsx",compression:true}));
+    var u8=new Uint8Array(XL.write(buildBook(XL,sheets),{type:"array",bookType:"xlsx",compression:true,cellStyles:true}));
     await deliverFile(cleanName(name)+" "+today()+".xlsx",u8);
   }catch(e){notice("Impossible de créer le fichier Excel. Vérifiez la connexion internet et réessayez.")}
   if(btn){btn.disabled=false;btn.removeAttribute("aria-busy");btn.innerHTML=label}
@@ -940,6 +1020,206 @@ async function runImport(btn){
     notice(done+" lots importés dans "+p.nom+". Vérifiez la liste, puis supprimez le fichier Excel du téléphone si vous voulez.");
   }catch(e){errEl.textContent=errMsg(e)+" ("+done+" lots déjà importés : relancez l'import, ils seront mis à jour sans doublon.)";btn.disabled=false;st.busy=false;btn.textContent="Reprendre l'import"}
 }
+
+/* ---------- assistant IA ---------- */
+var GEM=null,sampleFn=null,aiTurns=[],aiBusy=false,aiCtl=null,aiWait={},aiSeq=0;
+var AI_MODELS=["gemini-3.8-flash","gemini-3.5-flash-lite","gemini-2.5-flash"];
+var AI_CHIPS=["Résume la situation du projet affiché","Qui n'a pas encore payé toute l'avance ?","Quels chèques sont impayés ?","Exporte la liste des adhérents en Excel","Quels documents expirent bientôt ?"];
+function aiAvailable(){return !!(GEM||sampleFn)}
+function projByName(name){
+  var t=normH(name),l=projets();
+  if(!t)return P();
+  return l.find(function(p){return normH(p.nom)===t})||l.find(function(p){return normH(p.nom).indexOf(t)>=0||t.indexOf(normH(p.nom))>=0})||null;
+}
+function needProj(name){var p=projByName(name);if(!p)throw new Error("Projet introuvable : « "+name+" ». Projets : "+projets().map(function(x){return x.nom}).join(", "));return p}
+function findAdh(p,lot,nom){
+  var l=state.adherents.filter(function(a){return a.projet===p.id});
+  if(lot){var k=normH(lot).replace(/\s/g,""),m=l.filter(function(a){return normH(a.lot).replace(/\s/g,"")===k});if(m.length===1)return m[0];if(m.length>1)throw new Error("Plusieurs lots « "+lot+" » dans "+p.nom+" : précisez l'immeuble ou le nom.")}
+  if(nom){var t=normH(nom),m2=l.filter(function(a){return normH(a.nom).indexOf(t)>=0});if(m2.length===1)return m2[0];
+    if(m2.length>1)throw new Error("Plusieurs adhérents correspondent à « "+nom+" » : "+m2.slice(0,6).map(function(a){return a.nom+" ("+a.lot+")"}).join(", "))}
+  throw new Error("Aucun adhérent trouvé dans "+p.nom+" pour "+(lot?"le lot « "+lot+" »":"« "+nom+" »")+".");
+}
+function aiDate(d){return /^\d{4}-\d{2}-\d{2}$/.test(String(d||""))?String(d):today()}
+var AI_TOOLS=[
+  {name:"ajouter_paiement",description:"Enregistre un nouveau paiement (une tranche) pour un adhérent existant. L'application montre un résumé et l'utilisateur doit confirmer.",
+   schema:{type:"object",properties:{projet:{type:"string",description:"Nom du projet, ex. Sid El Abed"},lot:{type:"string",description:"Appartement ou lot, ex. A.2"},nom:{type:"string",description:"Nom de l'adhérent si le lot n'est pas connu"},montant:{type:"number",description:"Montant en DH"},date:{type:"string",description:"Date AAAA-MM-JJ (aujourd'hui si absent)"},mode:{type:"string",enum:["Chèque","Virement","Espèces"]},reference:{type:"string",description:"N° de chèque ou référence"},tranche:{type:"integer",description:"Numéro de tranche si l'utilisateur le précise"}},required:["projet","montant"]}},
+  {name:"modifier_adherent",description:"Attribue un lot disponible à une personne, ou modifie la fiche d'un adhérent (nom, téléphone, prix, avance, note). Ne modifie jamais les paiements. Confirmation demandée.",
+   schema:{type:"object",properties:{projet:{type:"string"},lot:{type:"string"},nom:{type:"string"},tel:{type:"string"},prix:{type:"number"},avance:{type:"number"},note:{type:"string"}},required:["projet","lot"]}},
+  {name:"ajouter_cheque",description:"Enregistre un chèque reçu d'un adhérent ou émis à un fournisseur. Confirmation demandée.",
+   schema:{type:"object",properties:{projet:{type:"string"},sens:{type:"string",enum:["recu","emis"]},numero:{type:"string"},montant:{type:"number"},banque:{type:"string"},date:{type:"string",description:"Échéance AAAA-MM-JJ"},tiers:{type:"string",description:"Adhérent ou fournisseur"},statut:{type:"string",enum:["attente","remis","encaisse","impaye"]}},required:["projet","numero","montant"]}},
+  {name:"changer_statut_cheque",description:"Change le statut d'un chèque existant (attente, remis, encaisse, impaye), retrouvé par son numéro. Confirmation demandée.",
+   schema:{type:"object",properties:{projet:{type:"string"},numero:{type:"string"},statut:{type:"string",enum:["attente","remis","encaisse","impaye"]}},required:["projet","numero","statut"]}},
+  {name:"ajouter_facture",description:"Enregistre une facture ou une dépense d'un fournisseur. Confirmation demandée.",
+   schema:{type:"object",properties:{projet:{type:"string"},fournisseur:{type:"string"},montant:{type:"number",description:"Montant TTC en DH"},paye:{type:"number",description:"Montant déjà payé"},poste:{type:"string",enum:POSTES},numero:{type:"string"},date:{type:"string"}},required:["projet","fournisseur","montant"]}},
+  {name:"exporter_excel",description:"Crée et télécharge un fichier Excel mis en forme pour un projet : adherents, cheques, depenses, travaux, documents ou projet (tout le projet).",
+   schema:{type:"object",properties:{projet:{type:"string"},type:{type:"string",enum:["adherents","cheques","depenses","travaux","documents","projet"]}},required:["type"]}}
+];
+async function aiTool(name,a){
+  a=a||{};
+  if(name==="exporter_excel"){
+    var pe=needProj(a.projet);
+    if(ui.projet!==pe.id){ui.projet=pe.id;ui.section="";remember();renderAll()}
+    await exportXl(String(a.type||"adherents"),null);
+    return "Fichier Excel « "+a.type+" » de "+pe.nom+" créé et proposé au téléchargement.";
+  }
+  var p=needProj(a.projet),now=new Date().toISOString(),summary,run;
+  if(name==="ajouter_paiement"){
+    var ad=findAdh(p,a.lot,a.nom),m=Math.round(Number(a.montant)||0);
+    if(!(m>0))throw new Error("Montant invalide.");
+    var tr=Math.round(Number(a.tranche)||0)||trancheOf(ad)+1;
+    summary="Ajouter un paiement de "+dh(m)+" pour "+adhName(ad)+(ad.lot?" ("+ad.lot+")":"")+" · tranche "+tr+" · "+fdate(aiDate(a.date))+(a.mode?" · "+a.mode:"")+(a.reference?" · réf. "+a.reference:"")+" — projet "+p.nom;
+    run=function(){return save("paiements",newId("paiements"),{projet:p.id,adherentId:ad.id,date:aiDate(a.date),montant:m,tranche:tr,mode:a.mode||"",reference:String(a.reference||""),note:"Ajouté par l'assistant",createdAt:now})};
+  }else if(name==="modifier_adherent"){
+    var ad2=findAdh(p,a.lot,""),d={},ch=[];
+    ["nom","tel","note"].forEach(function(k){if(a[k]!=null&&String(a[k]).trim()!==""){d[k]=String(a[k]).trim();ch.push(k+" : "+d[k])}});
+    ["prix","avance"].forEach(function(k){if(a[k]!=null&&Number(a[k])>0){d[k]=Math.round(Number(a[k]));ch.push(k+" : "+dh(d[k]))}});
+    if(!ch.length)throw new Error("Rien à modifier.");
+    summary=(isFree(ad2)&&d.nom?"Attribuer le lot ":"Modifier la fiche du lot ")+ad2.lot+" ("+p.nom+") — "+ch.join(" · ");
+    run=function(){var full={};Object.keys(ad2).forEach(function(k){if(k!=="id")full[k]=ad2[k]});return save("adherents",ad2.id,Object.assign(full,d))};
+  }else if(name==="ajouter_cheque"){
+    var mc=Math.round(Number(a.montant)||0);if(!(mc>0))throw new Error("Montant invalide.");
+    var sens=a.sens==="emis"?"emis":"recu",st=a.statut||"attente";
+    summary="Ajouter le chèque n° "+a.numero+" de "+dh(mc)+" ("+(sens==="recu"?"reçu":"émis")+(a.tiers?", "+a.tiers:"")+(a.banque?", "+a.banque:"")+(a.date?", échéance "+fdate(aiDate(a.date)):"")+") — projet "+p.nom;
+    run=function(){return save("cheques",newId("cheques"),{projet:p.id,section:ui.projet===p.id?ui.section:"",sens:sens,numero:String(a.numero),montant:mc,banque:a.banque||"",date:a.date?aiDate(a.date):"",tiers:a.tiers||"",statut:st,note:"Ajouté par l'assistant",createdAt:now})};
+  }else if(name==="changer_statut_cheque"){
+    var k2=normH(a.numero),cl=state.cheques.filter(function(c){return c.projet===p.id&&normH(c.numero)===k2});
+    if(!cl.length)throw new Error("Chèque n° "+a.numero+" introuvable dans "+p.nom+".");if(cl.length>1)throw new Error("Plusieurs chèques portent ce numéro.");
+    var c0=cl[0],lab={};CHQ_ST.forEach(function(o){lab[o[0]]=o[1]});
+    summary="Chèque n° "+c0.numero+" ("+dh(c0.montant)+") : « "+(lab[c0.statut||"attente"])+" » → « "+(lab[a.statut]||a.statut)+" »";
+    run=function(){var f={};Object.keys(c0).forEach(function(k){if(k!=="id")f[k]=c0[k]});f.statut=a.statut;return save("cheques",c0.id,f)};
+  }else if(name==="ajouter_facture"){
+    var mf=Math.round(Number(a.montant)||0);if(!(mf>0))throw new Error("Montant invalide.");
+    summary="Ajouter la facture de "+a.fournisseur+" : "+dh(mf)+(a.paye?" (payé "+dh(a.paye)+")":"")+(a.poste?" · "+a.poste:"")+" — projet "+p.nom;
+    run=function(){return save("factures",newId("factures"),{projet:p.id,section:ui.projet===p.id?ui.section:"",fournisseur:String(a.fournisseur),numero:String(a.numero||""),date:a.date?aiDate(a.date):today(),montant:mf,paye:Math.round(Number(a.paye)||0),poste:POSTES.indexOf(a.poste)>=0?a.poste:"Divers",valP:false,valT:false,note:"Ajouté par l'assistant",createdAt:now})};
+  }else throw new Error("Outil inconnu : "+name);
+  var ok=await aiConfirm(summary);
+  if(!ok)return "Annulé par l'utilisateur : rien n'a été enregistré.";
+  await run();
+  return "Enregistré : "+summary;
+}
+function aiContext(){
+  var L=["Date du jour : "+fdate(today()),"Projet affiché à l'écran : "+(P()?P().nom:"aucun")+(ui.section?" (partie "+ui.section+")":""),"Écran : "+VIEWS[ui.view]];
+  projets().forEach(function(p){
+    var ad=state.adherents.filter(function(a){return a.projet===p.id}).sort(lotSort),sold=ad.filter(function(a){return !isFree(a)});
+    var tp=sum(sold,"prix"),pd=sold.reduce(function(t,a){return t+paidOf(a)},0);
+    L.push("","=== PROJET « "+p.nom+" »"+(sections(p).length?" · parties : "+sections(p).join(", "):"")+" · "+sold.length+" adhérents, "+(ad.length-sold.length)+" lots disponibles · prix total "+num(tp)+" DH · payé "+num(pd)+" DH ("+pctOf(pd,tp)+" %) · reste "+num(Math.max(0,tp-pd))+" DH");
+    if(ad.length){L.push("Lots (appartement | immeuble | étage | partie | adhérent | tél | m² | prix | avance exigée | payé | reste | tranche atteinte | note) :");
+      ad.forEach(function(a){var pdA=paidOf(a);L.push([a.lot,a.immeuble,a.etage,a.section,isFree(a)?"DISPONIBLE":a.nom,a.tel,a.surface||"",num(a.prix),a.avance?num(a.avance):"",isFree(a)?"":num(pdA),isFree(a)?"":num(Math.max(0,n(a.prix)-pdA)),isFree(a)?"":trancheOf(a),a.note].map(function(x){return String(x==null?"":x).replace(/\|/g,"/")}).join(" | "))})}
+    var pays=state.paiements.filter(function(x){return x.projet===p.id}).sort(function(x,y){return -byDateDesc(x,y)});
+    if(pays.length){L.push("Paiements saisis dans l'application (date | adhérent | lot | montant | mode | référence) :");pays.forEach(function(x){var a=state.adherents.find(function(z){return z.id===x.adherentId})||{};L.push([fdate(x.date),a.nom,a.lot,num(x.montant),x.mode,x.reference].join(" | "))})}
+    var ch=state.cheques.filter(function(c){return c.projet===p.id});
+    if(ch.length){L.push("Chèques (sens | n° | montant | banque | échéance | tiers | statut) :");ch.forEach(function(c){L.push([c.sens==="emis"?"émis":"reçu",c.numero,num(c.montant),c.banque,fdate(c.date),c.tiers,c.statut||"attente"].join(" | "))})}
+    var fa=state.factures.filter(function(f){return f.projet===p.id});
+    if(fa.length){L.push("Factures (date | fournisseur | n° | poste | montant | payé | statut) :");fa.forEach(function(f){L.push([fdate(f.date),f.fournisseur,f.numero,f.poste,num(f.montant),num(f.paye),facStatus(f).t].join(" | "))})}
+    var ph=state.phases.filter(function(x){return x.projet===p.id});
+    if(ph.length)L.push("Avancement travaux : "+ph.map(function(x){return x.nom+" "+Math.min(100,n(x.pct))+" %"}).join(", "));
+    var dc=state.documents.filter(function(d){return d.projet===p.id});
+    if(dc.length)L.push("Documents : "+dc.map(function(d){return d.nom+(d.expiration?" (expire "+fdate(d.expiration)+")":"")}).join(", "));
+  });
+  var da=state.documents.filter(function(d){return !d.projet});
+  if(da.length)L.push("","Documents de l'association : "+da.map(function(d){return d.nom+(d.expiration?" (expire "+fdate(d.expiration)+")":"")}).join(", "));
+  return L.join("\n");
+}
+function aiRules(){
+  return "Tu es l'assistant IA intégré à l'application de gestion du bureau de l'Amicale Albaraka, une amicale immobilière au Maroc. "
+   +"Tu aides le Président, le Secrétaire général et le Trésorier à suivre les adhérents, les paiements, les chèques, les dépenses, les travaux et les documents. "
+   +"Réponds toujours dans la langue de l'utilisateur (darija en lettres latines ou arabes, français ou arabe). Sois bref et précis : des phrases courtes ou une petite liste, montants formatés comme « 1 250 000 DH ». "
+   +"Base-toi uniquement sur les données ci-dessous, à jour au moment de la question. Si une information manque, dis-le simplement. Ne jamais inventer un chiffre. "
+   +"Le montant payé d'un adhérent comprend le « déjà payé » de sa fiche plus les paiements saisis. Un lot marqué DISPONIBLE n'a pas d'adhérent. "
+   +"Pour enregistrer ou modifier quelque chose, ou créer un fichier Excel, utilise les outils : l'application affiche un résumé et l'utilisateur confirme lui-même avant tout enregistrement. "
+   +"S'il manque une information indispensable (projet, lot, montant) ou si plusieurs lots correspondent, pose la question au lieu de deviner. Après une action, dis en une phrase ce qui a été fait (ou annulé).\n\nDONNÉES DE L'APPLICATION :\n"+aiContext();
+}
+function aiFormat(t){
+  var h=esc(t).replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>"),out=[],list=false;
+  h.split("\n").forEach(function(line){
+    var m=line.match(/^\s*(?:[-*•]|\d+[.)])\s+(.*)$/);
+    if(m){if(!list){out.push("<ul>");list=true}out.push("<li>"+m[1]+"</li>")}
+    else{if(list){out.push("</ul>");list=false}out.push(line?line+"<br>":"<br>")}
+  });
+  if(list)out.push("</ul>");
+  return out.join("").replace(/(<br>)+$/,"");
+}
+function aiAdd(cls,html){var d=document.createElement("div");d.className="msg "+cls;d.innerHTML=html;$("#ai-msgs").appendChild(d);$("#ai-msgs").scrollTop=1e9;return d}
+function aiConfirm(text){
+  return new Promise(function(res){
+    var id="c"+(++aiSeq),d=document.createElement("div");d.className="confirm";d.id="ai-"+id;
+    d.innerHTML='<b>'+esc(text)+'</b><div class="row2"><button type="button" class="btn ghost" data-a="ai-no" data-id="'+id+'">Annuler</button><button type="button" class="btn" data-a="ai-ok" data-id="'+id+'">Confirmer</button></div>';
+    $("#ai-msgs").appendChild(d);$("#ai-msgs").scrollTop=1e9;aiWait[id]=res;
+  });
+}
+function aiAnswer(id,ok){
+  var r=aiWait[id];if(!r)return;delete aiWait[id];
+  var d=$("#ai-"+id);if(d){d.classList.add("done");d.querySelector(".row2").innerHTML='<span class="s">'+(ok?"Confirmé":"Annulé")+'</span>'}
+  r(ok);
+}
+function aiErr(e){
+  var m=String((e&&(e.message||e.code))||e||""),c=e&&e.code;
+  if(c==="not_granted"||c==="sampling_disabled")return "L'assistant n'est pas autorisé pour ce compte.";
+  if(c==="rate_limited"||/429|quota|resource.?exhausted|rate/i.test(m))return "Limite d'utilisation atteinte. Réessayez dans une minute.";
+  if(/app.?check/i.test(m))return "Assistant bloqué par App Check. Dans la console Firebase : App Check > onglet API > Firebase AI Logic > « Ne plus appliquer ».";
+  if(/SERVICE_DISABLED|has not been used|not enabled|api-not-enabled|PERMISSION_DENIED|403/i.test(m))return "L'IA n'est pas encore activée dans Firebase : console Firebase > AI Logic > Commencer > Gemini Developer API.";
+  if(/network|fetch|failed to fetch|offline/i.test(m))return "Pas de connexion internet.";
+  return "L'assistant n'a pas pu répondre ("+m.slice(0,140)+").";
+}
+async function runGemini(rules,turns){
+  var ai=GEM.getAI(GEM.app,{backend:new GEM.GoogleAIBackend()}),lastErr=null;
+  var decl=AI_TOOLS.map(function(t){return {name:t.name,description:t.description,parameters:t.schema}});
+  for(var mi=0;mi<AI_MODELS.length;mi++){
+    try{
+      var model=GEM.getGenerativeModel(ai,{model:AI_MODELS[mi],systemInstruction:rules,tools:[{functionDeclarations:decl}]});
+      var chat=model.startChat({history:turns.slice(0,-1).map(function(t){return {role:t.role==="assistant"?"model":"user",parts:[{text:t.text}]}})});
+      var res=await chat.sendMessage(turns[turns.length-1].text);
+      for(var round=0;round<6;round++){
+        var calls=(res.response.functionCalls&&res.response.functionCalls())||[];
+        if(!calls.length)break;
+        var parts=[];
+        for(var i=0;i<calls.length;i++){
+          var out;try{out={resultat:await aiTool(calls[i].name,calls[i].args)}}catch(e){out={erreur:e.message||String(e)}}
+          parts.push({functionResponse:{name:calls[i].name,response:out}});
+        }
+        res=await chat.sendMessage(parts);
+      }
+      var txt="";try{txt=res.response.text()}catch(e){}
+      return txt||"C'est fait.";
+    }catch(e){lastErr=e;if(!/not.?found|404|is not supported|unsupported|not available|invalid model/i.test(String(e&&e.message)))throw e}
+  }
+  throw lastErr;
+}
+async function runClaude(rules,turns,onText){
+  var lim=await sampleFn.limits().catch(function(){return null});
+  var opts={cache:false,onText:function(u){onText(u.text)}};
+  if(lim&&lim.tools)opts.tools=AI_TOOLS.map(function(t){return {name:t.name,description:t.description,inputSchema:t.schema,execute:function(inp){return aiTool(t.name,inp)}}});
+  var r=await sampleFn([{role:"user",content:rules}].concat(turns.map(function(t){return {role:t.role,content:t.text}})),opts);
+  return r.text;
+}
+async function aiSend(text){
+  text=String(text||"").trim();if(!text||aiBusy)return;
+  if(!aiAvailable()){aiAdd("err","L'assistant n'est pas disponible dans cette version.");return}
+  aiBusy=true;$("#ai-send").disabled=true;$("#ai-chips").innerHTML="";
+  aiAdd("me",esc(text));aiTurns.push({role:"user",text:text});
+  if(aiTurns.length>16)aiTurns=aiTurns.slice(-16);
+  while(aiTurns.length&&aiTurns[0].role!=="user")aiTurns.shift();
+  var bubble=aiAdd("ai think","Réflexion…");
+  try{
+    var rules=aiRules(),reply;
+    if(GEM)reply=await runGemini(rules,aiTurns);
+    else reply=await runClaude(rules,aiTurns,function(t){bubble.classList.remove("think");bubble.innerHTML=aiFormat(t);$("#ai-msgs").scrollTop=1e9});
+    bubble.classList.remove("think");bubble.innerHTML=aiFormat(reply);
+    aiTurns.push({role:"assistant",text:reply});
+  }catch(e){
+    bubble.remove();aiTurns.pop();aiAdd("err",esc(aiErr(e)));
+    Object.keys(aiWait).forEach(function(k){aiAnswer(k,false)});
+  }
+  aiBusy=false;$("#ai-send").disabled=false;$("#ai-msgs").scrollTop=1e9;
+}
+function aiReset(){
+  aiTurns=[];Object.keys(aiWait).forEach(function(k){aiAnswer(k,false)});
+  $("#ai-msgs").innerHTML="";
+  aiAdd("ai","Salam ! Je connais vos projets, adhérents, paiements, chèques et dépenses. Posez votre question, ou demandez-moi d'ajouter un paiement ou de préparer un Excel. Je vous demande toujours de confirmer avant d'enregistrer.");
+  $("#ai-chips").innerHTML=AI_CHIPS.map(function(c){return '<button type="button" data-a="ai-chip">'+esc(c)+'</button>'}).join("");
+}
+function aiOpen(){if(!$("#ai-msgs").children.length)aiReset();$("#ai").hidden=false;setTimeout(function(){try{$("#ai-in").focus()}catch(e){}},50)}
+function aiClose(){$("#ai").hidden=true}
 
 /* ---------- form sheet ---------- */
 function openSheet(col,id,adh){
@@ -1068,7 +1348,7 @@ async function seedPhases(btn){
 document.addEventListener("click",function(e){
   if(e.target.closest("[data-stop]"))return;
   var el=e.target.closest("[data-a]");
-  if(!el){if(e.target.id==="overlay")closeSheet();else if(e.target.id==="detail")closeDetail();return}
+  if(!el){if(e.target.id==="overlay")closeSheet();else if(e.target.id==="detail")closeDetail();else if(e.target.id==="ai"&&!aiBusy)aiClose();return}
   var a=el.dataset.a,id=el.dataset.id;
   if(a==="new")openSheet(el.dataset.col);
   else if(a==="edit")openSheet(el.dataset.col,id);
@@ -1078,6 +1358,11 @@ document.addEventListener("click",function(e){
   else if(a==="xl")exportXl(id,el);
   else if(a==="import"){var f=$("#imp-file");f.value="";f.click()}
   else if(a==="import-go")runImport(el);
+  else if(a==="ai-open")aiOpen();
+  else if(a==="ai-close")aiClose();
+  else if(a==="ai-new"){if(!aiBusy)aiReset()}
+  else if(a==="ai-chip")aiSend(el.textContent);
+  else if(a==="ai-ok"||a==="ai-no")aiAnswer(id,a==="ai-ok");
   else if(a==="file"){e.preventDefault();openFile(el)}
   else if(a==="close-detail")closeDetail();
   else if(a==="close")closeSheet();
@@ -1089,7 +1374,7 @@ document.addEventListener("click",function(e){
   else if(a==="scope"){ui.scope=id;ui.q="";ui.dcat="";renderAll()}
 });
 document.addEventListener("keydown",function(e){
-  if(e.key==="Escape"){if(sheet)closeSheet();else if(detailId)closeDetail()}
+  if(e.key==="Escape"){if(sheet)closeSheet();else if(detailId||impState)closeDetail();else if(!$("#ai").hidden&&!aiBusy)aiClose()}
   if((e.key==="Enter"||e.key===" ")&&e.target.matches&&e.target.matches('div[role="button"][data-a]')){e.preventDefault();e.target.click()}
 });
 document.addEventListener("input",function(e){
@@ -1098,6 +1383,8 @@ document.addEventListener("input",function(e){
   refreshList();
 });
 $("#form").addEventListener("submit",submitForm);
+$("#ai-form").addEventListener("submit",function(e){e.preventDefault();var t=$("#ai-in").value;$("#ai-in").value="";aiSend(t)});
+$("#ai-in").addEventListener("keydown",function(e){if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();$("#ai-form").requestSubmit()}});
 $("#imp-file").addEventListener("change",function(e){var f=e.target.files&&e.target.files[0];if(f)startImport(f)});
 document.addEventListener("change",function(e){
   if(!impState)return;
@@ -1154,14 +1441,15 @@ function start(){
   }
   var app=initializeApp(firebaseConfig);
   auth=getAuth(app);fdb=getFirestore(app);assets=fsAssets;
+  GEM={app:app,getAI:getAI,getGenerativeModel:getGenerativeModel,GoogleAIBackend:GoogleAIBackend};
   onAuthStateChanged(auth,function(u){
     unsubs.forEach(function(f){f()});unsubs=[];
     if(!u){
       COLS.forEach(function(c){state[c]=[];loaded[c]=false});
-      closeSheet();closeDetail();showOnly("login");return;
+      closeSheet();closeDetail();aiClose();aiTurns=[];$("#ai-msgs").innerHTML="";$("#fab-ai").hidden=true;showOnly("login");return;
     }
     $("#who").textContent=u.email||"";
-    notice("");showOnly("app");route();
+    notice("");showOnly("app");route();$("#fab-ai").hidden=false;
     var seeded=false;
     COLS.forEach(function(col){
       unsubs.push(onSnapshot(collection(fdb,PRE+col),function(snap){
