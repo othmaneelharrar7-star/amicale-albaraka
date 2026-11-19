@@ -370,8 +370,9 @@ header{background:rgba(245,249,255,.62);-webkit-backdrop-filter:blur(22px) satur
 </div>
 
 <script type="module">
-import {initializeApp,getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut,sendPasswordResetEmail,getFirestore,collection,doc,setDoc,getDoc,deleteDoc,onSnapshot,Bytes,getAI,getGenerativeModel,GoogleAIBackend} from "./firebase.js";
-import {firebaseConfig} from "./firebase-config.js";
+import {initializeApp,getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut,sendPasswordResetEmail,getFirestore,collection,doc,setDoc,getDoc,deleteDoc,onSnapshot,Bytes,getAI,getGenerativeModel,GoogleAIBackend,initializeAppCheck,ReCaptchaV3Provider} from "./firebase.js";
+import * as CFG from "./firebase-config.js";
+const firebaseConfig=CFG.firebaseConfig;
 (function(){
 "use strict";
 var COLS=["projets","adherents","paiements","cheques","factures","phases","journal","documents"];
@@ -1271,7 +1272,7 @@ function aiErr(e){
   var m=String((e&&(e.message||e.code))||e||""),c=e&&e.code,st=String((e&&e.customErrorData&&e.customErrorData.status)||"");
   var hay=m+" "+st+" "+String(c||"");
   if(c==="not_granted"||c==="sampling_disabled")return {t:"L'assistant n'est pas autorisé pour ce compte."};
-  if(/app.?check/i.test(hay))return {t:"Assistant bloqué par App Check. Console Firebase > App Check > onglet API > Firebase AI Logic > « Ne plus appliquer ».",d:m};
+  if(/app.?check/i.test(hay)||(GEM&&/\b403\b.*(ACCESS_DENIED|Permission denied on the service)/i.test(hay)&&!(GEM.hasAppCheck&&GEM.hasAppCheck())))return {ac:1,t:"Assistant bloqué par App Check. Console Firebase > App Check > onglet API > Firebase AI Logic > « Ne plus appliquer ».",d:m};
   if(/SERVICE_DISABLED|has not been used|is disabled|not been enabled|api-not-enabled|firebasevertexai.googleapis.com.*(disabled|enable)/i.test(hay))return {t:"L'IA n'est pas encore activée : console Firebase > AI Logic > Commencer > Gemini Developer API.",d:m};
   if(/API_KEY|api key|api-key/i.test(hay)&&/invalid|restrict|blocked|not valid/i.test(hay))return {t:"La clé Firebase n'est pas autorisée pour l'IA (restriction de clé API dans Google Cloud).",d:m};
   if(/\b403\b|PERMISSION_DENIED|forbidden/i.test(hay))return {t:"Accès refusé par Firebase AI Logic. Vérifiez que Gemini Developer API est activé et qu'App Check n'est plus appliqué pour AI Logic.",d:m};
@@ -1321,12 +1322,17 @@ async function aiSend(text){
   var bubble=aiAdd("ai think","Réflexion…");
   try{
     var rules=aiRules(),reply;
-    if(GEM)reply=await runGemini(rules,aiTurns);
+    if(GEM){if(GEM.ensureAppCheck)await GEM.ensureAppCheck();reply=await runGemini(rules,aiTurns)}
     else reply=await runClaude(rules,aiTurns,function(t){bubble.classList.remove("think");bubble.innerHTML=aiFormat(t);$("#ai-msgs").scrollTop=1e9});
     bubble.classList.remove("think");bubble.innerHTML=aiFormat(reply);
     aiTurns.push({role:"assistant",text:reply});
   }catch(e){
     bubble.remove();aiTurns.pop();var er=aiErr(e);
+    if(er.ac&&GEM&&GEM.saveSiteKey){
+      aiAdd("err",'Firebase exige App Check pour l\'IA. Il faut une clé reCAPTCHA v3 (une seule fois, voir les étapes données par Claude), puis collez ici la <b>clé du site</b> :'
+        +'<div class="composer" style="margin-top:8px"><label for="ai-key" style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">Clé du site reCAPTCHA</label><input id="ai-key" class="search" style="flex:1;font-size:14px" placeholder="6Lc…" autocomplete="off"><button type="button" class="btn" data-a="ai-key-save">Enregistrer</button></div>'
+        +(er.d?'<details style="margin-top:6px;font-weight:500"><summary>Détail technique</summary><span style="font-size:12px">'+esc(er.d.slice(0,600))+'</span></details>':''));
+    }else
     aiAdd("err",esc(er.t)+(er.d?'<details style="margin-top:6px;font-weight:500"><summary>Détail technique</summary><span style="font-size:12px">'+esc(er.d.slice(0,600))+'</span></details>':''));
     Object.keys(aiWait).forEach(function(k){aiAnswer(k,false)});
   }
@@ -1483,6 +1489,13 @@ document.addEventListener("click",function(e){
   else if(a==="ai-new"){if(!aiBusy)aiReset()}
   else if(a==="ai-chip")aiSend(el.textContent);
   else if(a==="ai-ok"||a==="ai-no")aiAnswer(id,a==="ai-ok");
+  else if(a==="ai-key-save"){
+    var kv=($("#ai-key").value||"").trim();
+    if(!/^[A-Za-z0-9_-]{30,60}$/.test(kv)){aiAdd("err","Cette clé ne ressemble pas à une clé du site reCAPTCHA (elle commence souvent par 6L et fait environ 40 caractères).");return}
+    el.disabled=true;
+    GEM.saveSiteKey(kv).then(function(r){aiAdd("ai",r==="restart"?"Clé enregistrée pour tous les membres du bureau. Fermez complètement l'application, rouvrez-la, puis reposez votre question.":"Clé enregistrée pour tous les membres du bureau. Reposez votre question.")})
+      .catch(function(e){el.disabled=false;aiAdd("err","Impossible d'enregistrer la clé : "+esc(String(e&&e.message||e)))});
+  }
   else if(a==="file"){e.preventDefault();openFile(el)}
   else if(a==="close-detail")closeDetail();
   else if(a==="close")closeSheet();
@@ -1561,7 +1574,22 @@ function start(){
   }
   var app=initializeApp(firebaseConfig);
   auth=getAuth(app);fdb=getFirestore(app);assets=fsAssets;
-  GEM={app:app,getAI:getAI,getGenerativeModel:getGenerativeModel,GoogleAIBackend:GoogleAIBackend};
+  var acDone=false,acKey="";
+  GEM={app:app,getAI:getAI,getGenerativeModel:getGenerativeModel,GoogleAIBackend:GoogleAIBackend,
+    hasAppCheck:function(){return acDone},
+    /* App Check (reCAPTCHA v3) : clé du site dans firebase-config.js, ou enregistrée depuis l'assistant dans Firestore */
+    ensureAppCheck:async function(){
+      if(acDone)return;
+      var key=String(CFG.recaptchaSiteKey||"").trim();
+      if(!key){try{var sn=await getDoc(doc(fdb,PRE+"meta","config"));if(sn.exists())key=String(sn.data().recaptchaSiteKey||"").trim()}catch(e){}}
+      if(!key)return;
+      try{initializeAppCheck(app,{provider:new ReCaptchaV3Provider(key),isTokenAutoRefreshEnabled:true});acDone=true;acKey=key}catch(e){}
+    },
+    saveSiteKey:async function(k){
+      await setDoc(doc(fdb,PRE+"meta","config"),{recaptchaSiteKey:k,updatedAt:new Date().toISOString()},{merge:true});
+      if(acDone&&acKey!==k)return "restart";
+      await GEM.ensureAppCheck();return "ok";
+    }};
   onAuthStateChanged(auth,function(u){
     unsubs.forEach(function(f){f()});unsubs=[];
     if(!u){

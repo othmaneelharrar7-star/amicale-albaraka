@@ -37,8 +37,12 @@ Il utilise Gemini via Firebase AI Logic (gratuit avec le forfait Spark, avec des
 
 À activer une seule fois dans la console Firebase :
 1. **AI Logic** (menu Services d'IA) > Commencer > choisissez **Gemini Developer API**.
-2. **App Check** > onglet **API** > **Firebase AI Logic** > **Ne plus appliquer** (sinon l'assistant est bloqué,
-   car l'application n'utilise pas App Check).
+2. App Check est maintenant imposé par Firebase pour AI Logic. Créez une clé **reCAPTCHA v3** sur
+   https://www.google.com/recaptcha/admin/create (type « Basée sur un score (v3) », domaine
+   `appassets.androidplatform.net`), puis dans la console Firebase : **App Check** > **Applications** >
+   application Web « amicale » > **reCAPTCHA** > collez la **clé secrète** > Enregistrer.
+3. Collez la **clé du site** dans l'assistant quand il la demande (elle est gardée dans Firestore pour tout
+   le bureau), ou dans `recaptchaSiteKey` de `firebase-config.js`.
 
 Les modèles essayés, dans l'ordre, sont listés dans `AI_MODELS` dans `index.html`.
 
