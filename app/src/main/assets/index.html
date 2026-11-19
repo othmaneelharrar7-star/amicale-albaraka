@@ -370,7 +370,7 @@ header{background:rgba(245,249,255,.62);-webkit-backdrop-filter:blur(22px) satur
 </div>
 
 <script type="module">
-import {initializeApp,getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut,sendPasswordResetEmail,getFirestore,collection,doc,setDoc,getDoc,deleteDoc,onSnapshot,Bytes,getAI,getGenerativeModel,GoogleAIBackend,initializeAppCheck,ReCaptchaV3Provider} from "./firebase.js";
+import {initializeApp,getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut,sendPasswordResetEmail,getFirestore,collection,doc,setDoc,getDoc,deleteDoc,onSnapshot,Bytes,getAI,getGenerativeModel,GoogleAIBackend,initializeAppCheck,ReCaptchaV3Provider,CustomProvider} from "./firebase.js";
 import * as CFG from "./firebase-config.js";
 const firebaseConfig=CFG.firebaseConfig;
 (function(){
@@ -1329,8 +1329,8 @@ async function aiSend(text){
   }catch(e){
     bubble.remove();aiTurns.pop();var er=aiErr(e);
     if(er.ac&&GEM&&GEM.saveSiteKey){
-      aiAdd("err",'Firebase exige App Check pour l\'IA. Il faut une clé reCAPTCHA v3 (une seule fois, voir les étapes données par Claude), puis collez ici la <b>clé du site</b> :'
-        +'<div class="composer" style="margin-top:8px"><label for="ai-key" style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">Clé du site reCAPTCHA</label><input id="ai-key" class="search" style="flex:1;font-size:14px" placeholder="6Lc…" autocomplete="off"><button type="button" class="btn" data-a="ai-key-save">Enregistrer</button></div>'
+      aiAdd("err",'Firebase exige App Check pour l\'IA. Collez ici (une seule fois) le <b>jeton de débogage App Check</b> créé dans la console Firebase :'
+        +'<div class="composer" style="margin-top:8px"><label for="ai-key" style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">Jeton de débogage App Check</label><input id="ai-key" class="search" style="flex:1;font-size:14px" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off"><button type="button" class="btn" data-a="ai-key-save">Enregistrer</button></div>'
         +(er.d?'<details style="margin-top:6px;font-weight:500"><summary>Détail technique</summary><span style="font-size:12px">'+esc(er.d.slice(0,600))+'</span></details>':''));
     }else
     aiAdd("err",esc(er.t)+(er.d?'<details style="margin-top:6px;font-weight:500"><summary>Détail technique</summary><span style="font-size:12px">'+esc(er.d.slice(0,600))+'</span></details>':''));
@@ -1491,9 +1491,9 @@ document.addEventListener("click",function(e){
   else if(a==="ai-ok"||a==="ai-no")aiAnswer(id,a==="ai-ok");
   else if(a==="ai-key-save"){
     var kv=($("#ai-key").value||"").trim();
-    if(!/^[A-Za-z0-9_-]{30,60}$/.test(kv)){aiAdd("err","Cette clé ne ressemble pas à une clé du site reCAPTCHA (elle commence souvent par 6L et fait environ 40 caractères).");return}
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(kv)&&!/^6L[A-Za-z0-9_-]{30,50}$/.test(kv)){aiAdd("err","Ce n'est pas un jeton de débogage (format xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx). Copiez-le avec le bouton de copie de la console Firebase.");return}
     el.disabled=true;
-    GEM.saveSiteKey(kv).then(function(r){aiAdd("ai",r==="restart"?"Clé enregistrée pour tous les membres du bureau. Fermez complètement l'application, rouvrez-la, puis reposez votre question.":"Clé enregistrée pour tous les membres du bureau. Reposez votre question.")})
+    GEM.saveSiteKey(kv).then(function(r){aiAdd("ai",r==="restart"?"Jeton enregistré pour tous les membres du bureau. Fermez complètement l'application, rouvrez-la, puis reposez votre question.":"Jeton enregistré pour tous les membres du bureau. Reposez votre question.")})
       .catch(function(e){el.disabled=false;aiAdd("err","Impossible d'enregistrer la clé : "+esc(String(e&&e.message||e)))});
   }
   else if(a==="file"){e.preventDefault();openFile(el)}
@@ -1578,15 +1578,20 @@ function start(){
   GEM={app:app,getAI:getAI,getGenerativeModel:getGenerativeModel,GoogleAIBackend:GoogleAIBackend,
     hasAppCheck:function(){return acDone},
     /* App Check (reCAPTCHA v3) : clé du site dans firebase-config.js, ou enregistrée depuis l'assistant dans Firestore */
+    /* App Check : jeton de débogage (gardé dans Firestore, lisible seulement par les comptes du bureau) ou clé reCAPTCHA v3 */
     ensureAppCheck:async function(){
       if(acDone)return;
-      var key=String(CFG.recaptchaSiteKey||"").trim();
-      if(!key){try{var sn=await getDoc(doc(fdb,PRE+"meta","config"));if(sn.exists())key=String(sn.data().recaptchaSiteKey||"").trim()}catch(e){}}
-      if(!key)return;
-      try{initializeAppCheck(app,{provider:new ReCaptchaV3Provider(key),isTokenAutoRefreshEnabled:true});acDone=true;acKey=key}catch(e){}
+      var key=String(CFG.recaptchaSiteKey||"").trim(),dbg=String(CFG.appCheckDebugToken||"").trim();
+      try{var sn=await getDoc(doc(fdb,PRE+"meta","config"));if(sn.exists()){var d=sn.data();dbg=dbg||String(d.appCheckDebugToken||"").trim();key=key||String(d.recaptchaSiteKey||"").trim()}}catch(e){}
+      try{
+        if(dbg){self.FIREBASE_APPCHECK_DEBUG_TOKEN=dbg;initializeAppCheck(app,{provider:new CustomProvider({getToken:function(){return Promise.reject(new Error("debug"))}}),isTokenAutoRefreshEnabled:true});acDone=true;acKey=dbg}
+        else if(key){initializeAppCheck(app,{provider:new ReCaptchaV3Provider(key),isTokenAutoRefreshEnabled:true});acDone=true;acKey=key}
+      }catch(e){}
     },
     saveSiteKey:async function(k){
-      await setDoc(doc(fdb,PRE+"meta","config"),{recaptchaSiteKey:k,updatedAt:new Date().toISOString()},{merge:true});
+      var isDbg=/^[0-9a-f]{8}-/i.test(k),data={updatedAt:new Date().toISOString()};
+      data[isDbg?"appCheckDebugToken":"recaptchaSiteKey"]=k;
+      await setDoc(doc(fdb,PRE+"meta","config"),data,{merge:true});
       if(acDone&&acKey!==k)return "restart";
       await GEM.ensureAppCheck();return "ok";
     }};
