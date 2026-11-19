@@ -458,6 +458,7 @@ COLS.forEach(function(c){state[c]=[];loaded[c]=false});
 var ui={view:"adherents",projet:"",section:"",chq:"recu",scope:"projet",q:"",dcat:""};
 var db=null,assets=null,downloads=null,local=false,sheet=null,detailId=null;
 var XLSX_SRC="./xlsx.min.js";
+var EXCELJS_SRC="./exceljs.min.js";
 var standalone=true,fileUrls={},auth=null,fdb=null,unsubs=[],PRE="am_",MAXB=950*1024;
 var $=function(s){return document.querySelector(s)};
 
@@ -829,14 +830,16 @@ function money(v){return Math.round(n(v))}
 function filesTxt(x){return x.fileId?"Oui":""}
 /* a sheet = {name, title, cols:[{h, w?, money?}], rows:[[...]], total:[...]} */
 function shAdherents(){
-  var all=state.adherents.filter(inScope).sort(lotSort),sold=all.filter(function(a){return !isFree(a)}),free=all.length-sold.length;
-  var rows=all.map(function(a,i){var paid=paidOf(a),prix=n(a.prix),rest=Math.max(0,prix-paid),fr=isFree(a);
-    return [i+1,a.etage||"",a.immeuble||"",a.lot||"",n(a.surface)||"",n(a.prixM2)||(n(a.surface)?Math.round(prix/n(a.surface)):""),money(prix),n(a.avance)?money(a.avance):"",fr?"":money(paid),fr?"":money(rest),fr?"":a.nom,a.note||"",
-      fr?"Disponible":(prix>0&&rest===0?"Soldé":(trancheOf(a)?"Tranche "+trancheOf(a):"Aucun paiement")),fr?"":pctOf(paid,prix),a.tel||"",a.section||""]});
-  var tp=sum(sold,"prix"),pd=sold.reduce(function(t,a){return t+paidOf(a)},0);
-  return {name:"Adhérents",title:"Liste des adhérents · "+scopeLabel(),
-    cols:[{h:"N°"},{h:"Étage"},{h:"Immeuble"},{h:"Appartement"},{h:"Surface (m²)"},{h:"Prix/m²",money:1},{h:"Prix total",money:1},{h:"Avance",money:1},{h:"Montant payé",money:1},{h:"Reste à payer",money:1},{h:"Nom et prénom (Coordonnées)"},{h:"Commentaire",w:40},{h:"Tranche atteinte"},{h:"Payé (%)"},{h:"Téléphone"},{h:"Partie"}],
-    rows:rows,total:["TOTAL","","",sold.length+" adhérent"+(sold.length>1?"s":"")+(free?" + "+free+" disponible"+(free>1?"s":""):""),"","",money(tp),money(sum(sold,"avance")),money(pd),money(Math.max(0,tp-pd)),"","","",pctOf(pd,tp),"",""]};
+  var all=state.adherents.filter(inScope).sort(lotSort);
+  var rows=all.map(function(a,i){
+    var paid=paidOf(a),prix=n(a.prix),fr=isFree(a),m2=n(a.prixM2)||(n(a.surface)?Math.round(prix/n(a.surface)):0),sf=n(a.surface),av=n(a.avance);
+    var prixCell=(m2&&sf&&Math.abs(m2*sf-prix)<1)?{f:"F{r}*E{r}",v:prix}:prix;
+    var avCell=av?(Math.abs(av-prix*0.4)<1?{f:"G{r}*40%",v:av}:av):"";
+    return [i+1,a.etage||"",a.immeuble||"",a.lot||"",sf||"",m2||"",prixCell,avCell,fr||!paid?"":money(paid),fr?"":{f:"G{r}-I{r}",v:Math.max(0,prix-paid)},fr?"":a.nom,a.note||""];
+  });
+  return {name:"Liste par étage",layout:"liste",title:"Liste par étage · "+scopeLabel(),
+    cols:[{h:"N°",w:7.3},{h:"Étage",w:18.3},{h:"Immeuble",w:13.7},{h:"Appartement",w:14},{h:"Surface (m²)",w:11.7},{h:"Prix/m²",money:1,w:11.7},{h:"Prix total",money:1,w:13.6},{h:"Avance",money:1,w:12},{h:"Montant payé",money:1,w:16.6},{h:"Reste à payer",money:1,w:18.5},{h:"Coordonnées ",w:27.7},{h:"Commentaire",w:30}],
+    rows:rows};
 }
 function payRows(a){
   var tm=trancheMap(a).of,base=Math.round(n(a.tranches)),out=[];
@@ -846,7 +849,7 @@ function payRows(a){
   });
   return out;
 }
-var PAY_COLS=[{h:"Adhérent"},{h:"Lot"},{h:"Tranche"},{h:"Date"},{h:"Mode / origine"},{h:"Montant (DH)",money:1},{h:"N° chèque ou référence"},{h:"Note"},{h:"Photo jointe"}];
+var PAY_COLS=[{h:"Adhérent"},{h:"Appartement"},{h:"Tranche"},{h:"Date"},{h:"Mode / origine"},{h:"Montant (DH)",money:1},{h:"N° chèque ou référence"},{h:"Note"},{h:"Photo jointe"}];
 function shPaiements(){
   var all=state.adherents.filter(inScope).filter(function(a){return !isFree(a)}).sort(lotSort),rows=[];
   all.forEach(function(a){rows=rows.concat(payRows(a))});
@@ -908,79 +911,81 @@ function shResume(){
     ["Factures et dépenses (DH)",money(sum(fa))],["Déjà payé aux fournisseurs (DH)",money(sum(fa,"paye"))],["Reste à payer aux fournisseurs (DH)",money(Math.max(0,sum(fa)-sum(fa,"paye")))],
     ["Chèques reçus en attente (DH)",money(sum(att))],["Chèques impayés (DH)",money(sum(imp))]]};
 }
-/* Mise en forme Excel : couleurs du logo, police lisible, bordures, totaux en gras */
-var XS={navy:"0B2A5E",blue:"2457A8",light:"E3ECFA",zebra:"F4F7FB",line:"C9D3E3",green:"2F6B14",greenBg:"E6F2DD",red:"B3141C",redBg:"FDE3E4",grey:"6B7689"};
-function xBorder(c){var b={style:"thin",color:{rgb:c||XS.line}};return {top:b,bottom:b,left:b,right:b}}
-function xFont(o){return Object.assign({name:"Calibri",sz:11,color:{rgb:"0A1F44"}},o||{})}
-function statusStyle(v){
-  var t=String(v||"");
-  if(/^(Soldé|Payée|Encaissé|Oui)$/.test(t))return {color:{rgb:XS.green},bold:true};
-  if(/^(Impayé|À valider|Expiré|Non)$|^Expire/.test(t))return {color:{rgb:XS.red},bold:true};
-  if(/^Disponible$/.test(t))return {color:{rgb:XS.grey},italic:true};
-  if(/^Tranche|^Partielle|^En attente|^Remis/.test(t))return {color:{rgb:XS.blue},bold:true};
-  return null;
-}
-function buildBook(XL,sheets){
-  var wb=XL.utils.book_new(),used={};
-  sheets.forEach(function(sh){
-    var sub="Amicale Albaraka · exporté le "+fdate(today());
-    var aoa=[[sh.title],[sub]],r0=-1,infoStart=-1,infoEnd=-1,ncols=sh.cols?sh.cols.length:2;
-    if(sh.info){aoa.push([]);infoStart=aoa.length;sh.info.forEach(function(r){aoa.push(r)});infoEnd=aoa.length-1}
-    if(sh.cols){
-      aoa.push([]);r0=aoa.length;aoa.push(sh.cols.map(function(c){return c.h}));
-      sh.rows.forEach(function(r){aoa.push(r)});
-      if(!sh.rows.length)aoa.push(["(aucune ligne)"]);
-      if(sh.total)aoa.push(sh.total);
-    }
-    var ws=XL.utils.aoa_to_sheet(aoa),width=[],last=aoa.length-1,hasTotal=!!(sh.cols&&sh.total);
-    var isMoney={},isPct={},isStatus={},isPaid={},isRest={},isCenter={},isDec={};
-    if(sh.cols)sh.cols.forEach(function(c,i){if(c.money)isMoney[i]=1;if(/\(%\)/.test(c.h))isPct[i]=1;if(/statut|tranche|valid/i.test(c.h))isStatus[i]=1;if(/^montant payé|^payé/i.test(c.h))isPaid[i]=1;if(/^reste/i.test(c.h))isRest[i]=1;if(/^(N°|Étage|Immeuble|Appartement|Lot|Tranche|Date|Échéance|Expire|Photo|Fichier|Validée|Partie)/i.test(c.h))isCenter[i]=1;if(/surface/i.test(c.h))isDec[i]=1});
-    for(var ri=0;ri<aoa.length;ri++){
-      var row=aoa[ri],nc=Math.max(row.length,(ri>=r0&&r0>=0)?ncols:row.length);
-      for(var ci=0;ci<nc;ci++){
-        var v=row[ci],ref=XL.utils.encode_cell({r:ri,c:ci});
-        if(ri>1&&!(hasTotal&&ri===last)){var len=String(v==null?"":v).length+(typeof v==="number"?3:0);width[ci]=Math.min(48,Math.max(width[ci]||9,len+3))}
-        if(!ws[ref]){if(ri>r0&&r0>=0&&ci<ncols)ws[ref]={t:"s",v:""};else continue}
-        var cell=ws[ref],st={font:xFont(),alignment:{vertical:"center"}};
-        if(ri===0)st={font:xFont({sz:16,bold:true,color:{rgb:XS.navy}}),alignment:{vertical:"center"}};
-        else if(ri===1)st={font:xFont({sz:10,italic:true,color:{rgb:XS.grey}})};
-        else if(ri>=infoStart&&ri<=infoEnd&&infoStart>=0){
-          st=ci===0?{font:xFont({bold:true,color:{rgb:XS.navy}}),fill:{patternType:"solid",fgColor:{rgb:XS.light}},border:xBorder()}
-                   :{font:xFont({bold:true,sz:12}),border:xBorder(),alignment:{horizontal:typeof v==="number"?"right":"left"}};
-          if(typeof v==="number"&&/DH/.test(String(row[0])))st.numFmt="#,##0";
-          if(typeof v==="number"&&/%/.test(String(row[0])))st.numFmt='0" %"';
-          var ss=statusStyle(v);if(ci===1&&ss)st.font=xFont(Object.assign({sz:12},ss));
-        }
-        else if(ri===r0){st={font:xFont({bold:true,color:{rgb:"FFFFFF"}}),fill:{patternType:"solid",fgColor:{rgb:XS.navy}},alignment:{horizontal:"center",vertical:"center",wrapText:true},border:xBorder(XS.navy)}}
-        else if(r0>=0&&ri>r0){
-          var tot=hasTotal&&ri===last,zebra=(ri-r0)%2===0,free=sh.name==="Adhérents"&&!tot&&String(row[12])==="Disponible";
-          st={font:xFont(tot?{bold:true,color:{rgb:XS.navy}}:{}),border:xBorder(),alignment:{vertical:"center",wrapText:sh.cols[ci]&&sh.cols[ci].w?true:false}};
-          if(tot){st.fill={patternType:"solid",fgColor:{rgb:XS.light}};st.border.top={style:"medium",color:{rgb:XS.navy}}}
-          else if(zebra)st.fill={patternType:"solid",fgColor:{rgb:XS.zebra}};
-          if(typeof v==="number"){st.alignment.horizontal="right";if(isMoney[ci])st.numFmt="#,##0";if(isPct[ci])st.numFmt='0" %"';if(isDec[ci])st.numFmt="0.00"}
-          if(isCenter[ci]&&!tot)st.alignment.horizontal="center";
-          if(!tot){
-            if(isPaid[ci]&&typeof v==="number")st.font=xFont({color:{rgb:XS.green},bold:true});
-            if(isRest[ci]&&typeof v==="number"&&v>0)st.font=xFont({color:{rgb:XS.red},bold:true});
-            if(isStatus[ci]){var s2=statusStyle(v);if(s2)st.font=xFont(s2)}
-            if(free)st.font=xFont({color:{rgb:XS.grey},italic:true});
-          }
-        }
-        if(st.numFmt)cell.z=st.numFmt;
-        cell.s=st;
-      }
-    }
-    if(sh.cols)sh.cols.forEach(function(c,i){if(c.w)width[i]=c.w});
-    if(sh.info&&!sh.cols){width[0]=Math.max(width[0]||10,34);width[1]=Math.max(width[1]||10,22)}
-    ws["!cols"]=width.map(function(w){return {wch:w||10}});
-    var rows=[];rows[0]={hpt:26};rows[1]={hpt:16};if(r0>=0)rows[r0]={hpt:34};ws["!rows"]=rows;
-    ws["!merges"]=[{s:{r:0,c:0},e:{r:0,c:Math.max(1,ncols-1)}},{s:{r:1,c:0},e:{r:1,c:Math.max(1,ncols-1)}}];
-    if(sh.cols&&sh.rows.length)ws["!autofilter"]={ref:XL.utils.encode_range({s:{r:r0,c:0},e:{r:r0+sh.rows.length,c:sh.cols.length-1}})};
-    var nm=cleanName(sh.name).replace(/[\[\]]/g,"").slice(0,31)||"Feuille",k=2;
-    while(used[nm])nm=nm.slice(0,28)+" "+(k++);used[nm]=1;
-    XL.utils.book_append_sheet(wb,ws,nm);
+/* Écriture Excel avec ExcelJS : vrais tableaux Excel (style « Bleu, moyen 2 »), comme le fichier d'origine */
+var exLib=null;
+function loadExcelJS(){
+  if(window.ExcelJS)return Promise.resolve(window.ExcelJS);
+  if(exLib)return exLib;
+  exLib=new Promise(function(res,rej){
+    var sc=document.createElement("script");sc.src=EXCELJS_SRC;
+    sc.onload=function(){window.ExcelJS?res(window.ExcelJS):rej(new Error("exceljs"))};
+    sc.onerror=function(){exLib=null;rej(new Error("exceljs"))};
+    document.head.appendChild(sc);
   });
-  return wb;
+  return exLib;
+}
+var NF_MONEY='_-* #,##0_-;\\-* #,##0_-;_-* "-"??_-;_-@_-';
+var THIN={style:"thin",color:{argb:"FF000000"}},BORDER={top:THIN,left:THIN,bottom:THIN,right:THIN};
+var FONT={name:"Calibri",size:11};
+function exCell(v,r){if(v&&typeof v==="object"&&v.f)return {formula:v.f.replace(/\{r\}/g,r),result:v.v};return v===""||v==null?null:v}
+function colLetter(c){var s="";while(c>0){var m=(c-1)%26;s=String.fromCharCode(65+m)+s;c=Math.floor((c-1)/26)}return s}
+async function buildXlsx(sheets){
+  var EJ=await loadExcelJS(),wb=new EJ.Workbook(),used={},tn=0;
+  wb.creator="Amicale Albaraka";wb.created=new Date();
+  sheets.forEach(function(sh){
+    var nm=cleanName(sh.name).replace(/[\[\]]/g,"").slice(0,31)||"Feuille",k=2;
+    while(used[nm.toLowerCase()])nm=nm.slice(0,28)+" "+(k++);used[nm.toLowerCase()]=1;
+    var ws=wb.addWorksheet(nm,{pageSetup:{paperSize:9,orientation:"landscape",fitToPage:true,fitToWidth:1,fitToHeight:0}});
+    var row=1,widths=[];
+    function fit(ci,v){var l=String(v==null?"":(typeof v==="object"&&v.v!=null?v.v:v)).length+(typeof v==="number"||(v&&v.f)?4:2);widths[ci]=Math.min(50,Math.max(widths[ci]||10,l))}
+    if(sh.info){
+      var t=ws.getCell(1,1);t.value=sh.title;t.font={name:"Calibri",size:14,bold:true,color:{argb:"FF1F4E78"}};
+      var sub=ws.getCell(2,1);sub.value="Amicale Albaraka · exporté le "+fdate(today());sub.font={name:"Calibri",size:9,italic:true,color:{argb:"FF7F7F7F"}};
+      row=4;
+      sh.info.forEach(function(it){
+        var a=ws.getCell(row,1),b=ws.getCell(row,2);a.value=it[0];b.value=exCell(it[1]);
+        a.font={name:"Calibri",size:11,bold:true,color:{argb:"FFFFFFFF"}};a.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF1F4E78"}};
+        b.font={name:"Calibri",size:11,bold:true};b.fill={type:"pattern",pattern:"solid",fgColor:{argb:row%2?"FFDDEBF7":"FFFFFFFF"}};
+        a.border=BORDER;b.border=BORDER;a.alignment={vertical:"middle"};
+        if(typeof it[1]==="number"){b.alignment={horizontal:"right"};b.numFmt=/DH/.test(it[0])?NF_MONEY:/%/.test(it[0])?'0" %"':/m²/.test(it[0])?"0.00":"General"}
+        fit(0,it[0]);fit(1,it[1]);row++;
+      });
+      if(sh.cols)row++;
+    }
+    if(sh.cols){
+      var lead=sh.layout==="liste",c0=lead?2:1,hdr=row,cols=lead?sh.cols.slice(1):sh.cols;
+      var data=sh.rows.length?sh.rows:[sh.cols.map(function(c,i){return i===0?"(aucune ligne)":""})];
+      var trows=data.map(function(r,ri){return (lead?r.slice(1):r).map(function(v){return exCell(v,hdr+1+ri)})});
+      var seen={},names=cols.map(function(c){var h=String(c.h||" "),x=h,q=2;while(seen[x])x=h+" "+(q++);seen[x]=1;return x});
+      ws.addTable({name:"Tableau"+(++tn),ref:colLetter(c0)+hdr,headerRow:true,totalsRow:!!sh.total,
+        style:{theme:"TableStyleMedium2",showRowStripes:true},
+        columns:cols.map(function(c,i){var o={name:names[i],filterButton:true};if(sh.total){if(i===0)o.totalsRowLabel="TOTAL";else if(c.money)o.totalsRowFunction="sum"}return o}),
+        rows:trows});
+      var last=hdr+trows.length+(sh.total?1:0);
+      if(lead){
+        var h0=ws.getCell(hdr,1);h0.value=sh.cols[0].h;h0.font={name:"Calibri",size:11,bold:true,color:{argb:"FFFFFFFF"}};
+        h0.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF1F4E78"}};h0.alignment={horizontal:"center",vertical:"middle"};h0.border=BORDER;
+        data.forEach(function(r,ri){var c=ws.getCell(hdr+1+ri,1);c.value=exCell(r[0]);c.font=FONT;c.border=BORDER;c.alignment={horizontal:"center"}});
+      }
+      sh.cols.forEach(function(c,i){
+        var ci=i+1,center=/^(N°|Étage|Immeuble|Appartement|Lot|Tranche|Date|Échéance|Expire|Photo|Fichier|Validée|Partie|Statut)/i.test(c.h);
+        fit(i,c.h);data.forEach(function(r){fit(i,r[i])});
+        var hc=ws.getCell(hdr,ci);hc.alignment={horizontal:"center",vertical:"middle",wrapText:true};hc.border=BORDER;
+        if(!(lead&&ci===1)){hc.font={name:"Calibri",size:11,bold:true,color:{argb:"FFFFFFFF"}};hc.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF4472C4"}}}
+        for(var r=hdr+1;r<=last;r++){
+          var cell=ws.getCell(r,ci),tot=sh.total&&r===last;
+          cell.border=BORDER;if(!(lead&&ci===1))cell.font=tot?{name:"Calibri",size:11,bold:true}:FONT;
+          if(c.money)cell.numFmt=NF_MONEY;else if(/surface/i.test(c.h))cell.numFmt="0.00";else if(/\(%\)/.test(c.h))cell.numFmt='0" %"';
+          cell.alignment={vertical:"middle",horizontal:center?"center":undefined,wrapText:!!c.w&&c.w>=30};
+        }
+      });
+      ws.getRow(hdr).height=30;
+      if(!sh.info)ws.views=[{state:"frozen",ySplit:hdr}];
+      sh.cols.forEach(function(c,i){if(c.w)widths[i]=c.w});
+    }
+    widths.forEach(function(w,i){ws.getColumn(i+1).width=w||10});
+  });
+  return new Uint8Array(await wb.xlsx.writeBuffer());
 }
 function u8ToB64(u8){var t="",C=0x8000;for(var i=0;i<u8.length;i+=C)t+=String.fromCharCode.apply(null,u8.subarray(i,i+C));return btoa(t)}
 var XLSX_MIME="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -1009,8 +1014,7 @@ async function exportXl(kind,btn){
   var label=btn?btn.innerHTML:"";
   if(btn){btn.disabled=true;btn.setAttribute("aria-busy","true")}
   try{
-    var XL=await loadXlsx();
-    var u8=new Uint8Array(XL.write(buildBook(XL,sheets),{type:"array",bookType:"xlsx",compression:true,cellStyles:true}));
+    var u8=await buildXlsx(sheets);
     await deliverFile(cleanName(name)+" "+today()+".xlsx",u8);
   }catch(e){notice("Impossible de créer le fichier Excel. Vérifiez la connexion internet et réessayez.")}
   if(btn){btn.disabled=false;btn.removeAttribute("aria-busy");btn.innerHTML=label}

@@ -68,7 +68,8 @@ Toute personne connectée peut tout voir et tout modifier.
 ## Où modifier quoi
 
 - `app/src/main/assets/index.html` : toute l'application (écrans, catégories, textes).
-- `app/src/main/assets/xlsx.min.js` : bibliothèque xlsx-js-style (licence Apache 2.0) pour lire et créer les fichiers Excel mis en forme.
+- `app/src/main/assets/xlsx.min.js` : bibliothèque xlsx-js-style (licence Apache 2.0) pour lire les fichiers Excel importés.
+- `app/src/main/assets/exceljs.min.js` : bibliothèque ExcelJS (licence MIT) pour créer les fichiers Excel (vrais tableaux Excel, comme le fichier d'origine).
 - `app/src/main/assets/firebase.js` : SDK Firebase 13.4.0 (connexion, base de données, IA) regroupé en un seul fichier.
 - `app/src/main/assets/firebase-config.js` : la liaison avec votre projet Firebase.
 - `app/src/main/java/ma/albaraka/amicale/MainActivity.kt` : l'enveloppe Android.
