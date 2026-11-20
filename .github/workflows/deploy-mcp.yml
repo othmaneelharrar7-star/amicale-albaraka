@@ -1,0 +1,54 @@
+name: Déployer le connecteur MCP
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["mcp/**", ".github/workflows/deploy-mcp.yml"]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Vérifier les secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          MCP_TOKEN: ${{ secrets.MCP_TOKEN }}
+          FB_EMAIL: ${{ secrets.FB_EMAIL }}
+          FB_PASSWORD: ${{ secrets.FB_PASSWORD }}
+        run: |
+          missing=""
+          for v in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID MCP_TOKEN FB_EMAIL FB_PASSWORD; do
+            [ -z "${!v}" ] && missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Secrets manquants dans GitHub (Settings > Secrets and variables > Actions) :$missing"
+            exit 1
+          fi
+          if [ ${#MCP_TOKEN} -lt 24 ]; then
+            echo "::error::MCP_TOKEN doit contenir au moins 24 caractères."
+            exit 1
+          fi
+      - name: Déployer sur Cloudflare
+        id: deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: mcp
+          secrets: |
+            MCP_TOKEN
+            FB_EMAIL
+            FB_PASSWORD
+        env:
+          MCP_TOKEN: ${{ secrets.MCP_TOKEN }}
+          FB_EMAIL: ${{ secrets.FB_EMAIL }}
+          FB_PASSWORD: ${{ secrets.FB_PASSWORD }}
+      - name: Adresse du connecteur
+        run: |
+          echo "### Connecteur MCP déployé" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Adresse à coller dans Claude : \`${{ steps.deploy.outputs.deployment-url }}/mcp/<votre MCP_TOKEN>\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Adresse : ${{ steps.deploy.outputs.deployment-url }}/mcp/<votre MCP_TOKEN>"

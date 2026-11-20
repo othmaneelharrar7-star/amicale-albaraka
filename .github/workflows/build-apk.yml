@@ -3,6 +3,7 @@ name: Construire l'APK
 on:
   push:
     branches: [main]
+    paths-ignore: ["mcp/**", ".github/workflows/deploy-mcp.yml", "LISEZMOI.md"]
   workflow_dispatch:
 
 jobs:

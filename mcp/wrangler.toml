@@ -1,0 +1,10 @@
+name = "amicale-albaraka-mcp"
+main = "worker.js"
+compatibility_date = "2025-11-01"
+workers_dev = true
+
+# Valeurs publiques (les mêmes que dans firebase-config.js de l'application).
+# Les secrets MCP_TOKEN, FB_EMAIL et FB_PASSWORD sont envoyés par GitHub Actions.
+[vars]
+FB_API_KEY = "AIzaSyBlWwJbNLiyltTFHdnL9_hhMeyBxQXOLoM"
+FB_PROJECT_ID = "amicale-albaraka"

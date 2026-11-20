@@ -61,6 +61,27 @@ Chaque écran a un bouton vert « Excel » : liste des adhérents (avec tous les
 chèques, factures et dépenses, travaux, documents. Le bouton vert en haut exporte tout le projet sélectionné.
 Le fichier est enregistré dans Téléchargements > Amicale Albaraka puis ouvert avec Excel ou Google Sheets.
 
+## Connecteur MCP pour Claude (lecture seule)
+
+Le dossier `mcp/` contient un petit serveur MCP. Une fois ajouté dans Claude (claude.ai ou l'application Claude), on peut demander à Claude la situation des projets, la liste des adhérents, les paiements, les chèques, les factures, les travaux et les documents. Le connecteur **ne modifie jamais** les données.
+
+Outils : `resume_general`, `lister_adherents`, `fiche_adherent`, `lister_paiements`, `lister_cheques`, `lister_factures`, `suivi_travaux`, `lister_documents`.
+
+Mise en place (une seule fois) :
+
+1. **Compte dédié dans Firebase** : console Firebase > Authentication > Ajouter un utilisateur, par ex. `claude-mcp@amicale-albaraka.ma` avec un mot de passe long. Pour couper l'accès plus tard, il suffit de désactiver ce compte.
+2. **Cloudflare (gratuit)** : créer un compte sur dash.cloudflare.com, ouvrir *Workers & Pages* une fois (pour activer l'adresse `workers.dev`).
+   - *My Profile > API Tokens > Create Token >* modèle **Edit Cloudflare Workers** → copier le jeton.
+   - L'**Account ID** est affiché à droite de la page *Workers & Pages*.
+3. **Secrets GitHub** (dépôt > Settings > Secrets and variables > Actions > New repository secret) :
+   - `CLOUDFLARE_API_TOKEN` et `CLOUDFLARE_ACCOUNT_ID`
+   - `FB_EMAIL` et `FB_PASSWORD` : le compte dédié de l'étape 1
+   - `MCP_TOKEN` : une longue suite de lettres et chiffres (au moins 24), qui sert de mot de passe dans l'adresse
+4. GitHub > Actions > **Déployer le connecteur MCP** > *Run workflow*. Le résumé affiche l'adresse : `https://amicale-albaraka-mcp.<votre-nom>.workers.dev/mcp/<MCP_TOKEN>`.
+5. Dans Claude : *Paramètres > Connecteurs > Ajouter un connecteur personnalisé*, nom « Amicale Albaraka », coller l'adresse complète. Il est ensuite disponible aussi sur le téléphone.
+
+L'adresse complète donne accès aux données : ne la partagez pas. Pour la changer, modifiez le secret `MCP_TOKEN` puis relancez le déploiement.
+
 ## 3. Donner ou retirer l'accès à quelqu'un
 
 - Donner : Authentication > Users > Ajouter un utilisateur, puis envoyez-lui l'APK, son email et son mot de passe.
@@ -71,6 +92,7 @@ Toute personne connectée peut tout voir et tout modifier.
 
 ## Où modifier quoi
 
+- `mcp/worker.js` : le connecteur MCP pour Claude.
 - `app/src/main/assets/index.html` : toute l'application (écrans, catégories, textes).
 - `app/src/main/assets/xlsx.min.js` : bibliothèque xlsx-js-style (licence Apache 2.0) pour lire les fichiers Excel importés.
 - `app/src/main/assets/exceljs.min.js` : bibliothèque ExcelJS (licence MIT) pour créer les fichiers Excel (vrais tableaux Excel, comme le fichier d'origine).
