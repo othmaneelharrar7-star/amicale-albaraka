@@ -536,6 +536,13 @@ var fsAssets={
     return {id:r.id,contentType:p.type,name:p.name};
   },
   delete:function(id){if(fileUrls[id]){URL.revokeObjectURL(fileUrls[id]);delete fileUrls[id]}return deleteDoc(doc(fdb,PRE+"fichiers",id))},
+  /* fichier Excel d'origine gardé tel quel (modèle pour l'export) */
+  storeRaw:async function(file){
+    var buf=new Uint8Array(await file.arrayBuffer());if(buf.length>MAXB)throw {code:"file/too-large"};
+    var r=doc(collection(fdb,PRE+"fichiers"));
+    await withTimeout(setDoc(r,{name:file.name,type:file.type||"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",size:buf.length,data:Bytes.fromUint8Array(buf),createdAt:new Date().toISOString()}),45000);
+    return r.id;
+  },
   get:async function(id){
     var sn=await withTimeout(getDoc(doc(fdb,PRE+"fichiers",id)),45000);
     if(!sn.exists())throw {code:"file/missing"};
@@ -930,9 +937,10 @@ var THIN={style:"thin",color:{argb:"FF000000"}},BORDER={top:THIN,left:THIN,botto
 var FONT={name:"Calibri",size:11};
 function exCell(v,r){if(v&&typeof v==="object"&&v.f)return {formula:v.f.replace(/\{r\}/g,r),result:v.v};return v===""||v==null?null:v}
 function colLetter(c){var s="";while(c>0){var m=(c-1)%26;s=String.fromCharCode(65+m)+s;c=Math.floor((c-1)/26)}return s}
-async function buildXlsx(sheets){
-  var EJ=await loadExcelJS(),wb=new EJ.Workbook(),used={},tn=0;
-  wb.creator="Amicale Albaraka";wb.created=new Date();
+async function buildXlsx(sheets,wbIn){
+  var EJ=await loadExcelJS(),wb=wbIn||new EJ.Workbook(),used={},tn=0;
+  if(wbIn){wb.worksheets.forEach(function(w){used[String(w.name).toLowerCase()]=1});tn=100;}
+  else{wb.creator="Amicale Albaraka";wb.created=new Date();}
   sheets.forEach(function(sh){
     var nm=cleanName(sh.name).replace(/[\[\]]/g,"").slice(0,31)||"Feuille",k=2;
     while(used[nm.toLowerCase()])nm=nm.slice(0,28)+" "+(k++);used[nm.toLowerCase()]=1;
@@ -986,6 +994,7 @@ async function buildXlsx(sheets){
     }
     widths.forEach(function(w,i){ws.getColumn(i+1).width=w||10});
   });
+  if(wbIn)return wb;
   return new Uint8Array(await wb.xlsx.writeBuffer());
 }
 function u8ToB64(u8){var t="",C=0x8000;for(var i=0;i<u8.length;i+=C)t+=String.fromCharCode.apply(null,u8.subarray(i,i+C));return btoa(t)}
@@ -1015,126 +1024,297 @@ async function exportXl(kind,btn){
   var label=btn?btn.innerHTML:"";
   if(btn){btn.disabled=true;btn.setAttribute("aria-busy","true")}
   try{
-    var u8=await buildXlsx(sheets);
+    var u8;
+    if(kind==="adherents"&&p&&p.modele&&p.modele.fileId){
+      try{u8=await buildFromModel(p);name=String(p.modele.name||"Adhérents").replace(/\.xlsx?$/i,"")+" (à jour)"}
+      catch(e2){u8=null}
+    }
+    if(!u8)u8=await buildXlsx(sheets);
     await deliverFile(cleanName(name)+" "+today()+".xlsx",u8);
   }catch(e){notice("Impossible de créer le fichier Excel. Vérifiez la connexion internet et réessayez.")}
   if(btn){btn.disabled=false;btn.removeAttribute("aria-busy");btn.innerHTML=label}
 }
 
-/* ---------- import Excel ---------- */
+/* ---------- import Excel ----------
+   Lit n'importe quelle feuille : plusieurs tableaux dans la même feuille, en-têtes sur 1 ou 2 lignes,
+   titres de parties (« Commerce », « LOT 2 »…) et tableaux sans en-tête (colonnes devinées d'après le contenu). */
 var impState=null;
 function normH(t){return String(t==null?"":t).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/²/g,"2").replace(/\s+/g," ").trim()}
 function headKey(h){
-  var t=normH(h);if(!t)return "";
-  if(/^(n|n°|no|num|numero|nº|#)\.?$/.test(t))return "num";
-  if(/prix.*m2|\/ ?m2|prix unitaire|prix au m/.test(t))return "prixM2";
-  if(/prix total|^prix$|montant total|prix de vente/.test(t))return "prix";
+  var t=normH(h);if(!t||/^-?[\d\s.,]+$/.test(t))return "";
+  if(/^(n|n°|no|num|numero|nº|#|ordre|n° d'ordre)\.?$/.test(t))return "num";
+  if(/prix.*m2|\/ ?m2|prix unitaire|prix au m|^colonne1$/.test(t))return "prixM2";
+  if(/prix total|montant total|prix de vente|^total$|^total ttc$|^montant$/.test(t))return "prix";
+  if(/^prix$/.test(t))return "prixAmb";
   if(/avance|acompte/.test(t))return "avance";
+  if(/tranche/.test(t))return "skip";
   if(/reste/.test(t))return "reste";
-  if(/paye|verse|encaisse|regle/.test(t))return "paye";
-  if(/^nom|nom &|nom et|prenom|adherent|acquereur|client|beneficiaire/.test(t))return "nom";
+  if(/paye|verse|encaisse|regle|cheque|recu/.test(t))return "paye";
+  if(/^nom|nom &|nom et|prenom|adherent|acquereur|client|beneficiaire|proprietaire|attributaire/.test(t))return "nom";
   if(/coordon/.test(t))return "coord";
   if(/tel|phone|gsm|mobile/.test(t))return "tel";
   if(/etage|niveau/.test(t))return "etage";
+  if(/^nature|^type/.test(t))return "nature";
   if(/immeuble|bloc|batiment/.test(t))return "immeuble";
-  if(/appartement|^lot|bungalow|villa|unite|^appt|^n° lot/.test(t))return "lot";
   if(/surface|superficie/.test(t))return "surface";
+  if(/appartement|^appt|\blot\b|bungalow|villa|unite|local|magasin/.test(t))return "lot";
   if(/comment|remarque|observ|^note/.test(t))return "note";
   if(/partie|section|residence/.test(t))return "section";
   return "";
 }
-function parseNum(v,warn){
+function numOf(v){
   if(typeof v==="number")return v;
-  var t=String(v==null?"":v).trim();if(!t||t==="-")return 0;
+  var t=String(v==null?"":v).trim();if(!t||t==="-")return NaN;
   var u=t.replace(/(\d)[oO]/g,"$10").replace(/[oO](\d)/g,"0$1").replace(/[\s  ]/g,"").replace(/dh|mad/ig,"");
   if(u.indexOf(",")>=0&&u.indexOf(".")>=0)u=u.replace(/,/g,"");
   else if(/^-?\d{1,3}(,\d{3})+$/.test(u))u=u.replace(/,/g,"");
   else u=u.replace(",",".");
-  var x=parseFloat(u);
-  if(isNaN(x)||!/^-?[\d.]+$/.test(u)){warn&&warn("« "+t+" » n'est pas un montant lisible : ignoré");return 0}
-  if(u!==t.replace(/[\s  ]/g,"").replace(/,/g,"")&&/[oO]/.test(t))warn&&warn("« "+t+" » lu comme "+num(x));
+  return /^-?\d+(\.\d+)?$/.test(u)?parseFloat(u):NaN;
+}
+function parseNum(v,warn){
+  var t=String(v==null?"":v).trim();if(typeof v!=="number"&&(!t||t==="-"))return 0;
+  var x=numOf(v);
+  if(isNaN(x)){warn&&warn("« "+t+" » n'est pas un montant lisible : ignoré");return 0}
+  if(typeof v!=="number"&&/\d[oO]|[oO]\d/.test(t))warn&&warn("« "+t+" » lu comme "+num(x));
   return x;
 }
+function isCode(v){var t=String(v==null?"":v).trim();return t.length>0&&t.length<=16&&/[A-Za-z]/.test(t)&&/\d/.test(t)&&!/\s{2,}/.test(t)}
+function isName(v){var t=String(v==null?"":v).trim();return !isCode(t)&&/[A-Za-zÀ-ÿ]{2,}/.test(t)&&isNaN(numOf(t))&&t.length>=3}
+function etageOf(t){t=normH(t);if(!t)return "";if(/rdc|rez/.test(t))return "RDC";var m=t.match(/(\d+)\s*(er|eme|e|ème)?/);if(!m||!/etage|niv|\d+\s*(er|eme|e)\b/.test(t))return "";return m[1]==="1"?"1er étage":m[1]+"e étage"}
+function abbrev(t){var w=String(t||"").normalize("NFD").replace(/[̀-ͯ]/g,"").split(/[^A-Za-z0-9]+/).filter(Boolean);return w.map(function(x){return /^\d+$/.test(x)?x:x.charAt(0).toUpperCase()}).join("")||"L"}
+function median(a){a=a.filter(function(x){return !isNaN(x)}).sort(function(x,y){return x-y});return a.length?a[Math.floor(a.length/2)]:NaN}
+function fixMap(m,rows){
+  var colVals=function(c){return rows.map(function(r){return r.cells[c]}).filter(function(v){return String(v==null?"":v).trim()!==""})};
+  if(m.lot==null&&m.num!=null){var cv=colVals(m.num);if(cv.length&&cv.filter(isCode).length>=cv.length*0.6){m.lot=m.num;delete m.num}}
+  if(m.prixAmb!=null){var md=median(colVals(m.prixAmb).map(numOf));
+    if(m.prix==null&&!(md<100000))m.prix=m.prixAmb;else if(m.prixM2==null&&md<100000)m.prixM2=m.prixAmb;delete m.prixAmb}
+  if(m.nom==null&&m.coord!=null){m.nom=m.coord;delete m.coord}
+  if(m.tel==null&&m.coord!=null)m.tel=m.coord;
+  return m;
+}
+function mapScore(m,rows){
+  if(!m||!rows.length)return 0;
+  var g=function(r,k){return m[k]==null?NaN:numOf(r.cells[m[k]])},ok=0,tot=0;
+  if(m.prix!=null&&m.surface!=null&&m.prixM2!=null){
+    rows.forEach(function(r){var p=g(r,"prix"),s2=g(r,"surface"),q=g(r,"prixM2");if(p>0&&s2>0&&q>0){tot++;if(Math.abs(s2*q-p)<=Math.max(2,p*0.03))ok++}});
+    if(tot>=2)return ok/tot;
+  }
+  rows.forEach(function(r){tot++;var l=m.lot==null?"":String(r.cells[m.lot]==null?"":r.cells[m.lot]).trim();if(l&&!(numOf(l)>1000)&&((g(r,"prix")>0)||(g(r,"surface")>0)))ok++});
+  return tot?ok/tot:0;
+}
+function inferMap(rows){
+  var maxc=0;rows.forEach(function(r){maxc=Math.max(maxc,r.cells.length)});
+  var prof=[];
+  for(var c=0;c<maxc;c++){
+    var vals=rows.map(function(r){return r.cells[c]}),ne=vals.filter(function(v){return String(v==null?"":v).trim()!==""});
+    var nums=ne.map(numOf).filter(function(x){return !isNaN(x)}),strs=ne.filter(function(v){return isNaN(numOf(v))});
+    var uniq={};strs.forEach(function(v){uniq[String(v).trim()]=1});
+    prof.push({c:c,n:ne.length,nums:nums,med:median(nums),numRatio:ne.length?nums.length/ne.length:0,
+      code:strs.length?strs.filter(isCode).length/Math.max(1,ne.length):0,name:strs.length?strs.filter(isName).length/Math.max(1,ne.length):0,constant:strs.length>1&&Object.keys(uniq).length===1});
+  }
+  var m={},used={},take=function(k,c){if(c!=null&&c>=0){m[k]=c;used[c]=1}};
+  var best=function(f,min){var b=null,bv=min;prof.forEach(function(p){if(used[p.c])return;var v=f(p);if(v>bv){bv=v;b=p.c}});return b};
+  prof.forEach(function(p){if(p.constant){used[p.c]=1}});
+  take("lot",best(function(p){return p.code},0.5));
+  take("nom",best(function(p){return p.name},0.3));
+  take("prixM2",best(function(p){if(p.numRatio<0.6||!(p.med>=500&&p.med<=100000))return -1;var cnt={};p.nums.forEach(function(x){cnt[x]=(cnt[x]||0)+1});var mx=0;for(var k in cnt)mx=Math.max(mx,cnt[k]);return mx/p.nums.length},0.5));
+  var surfs=prof.filter(function(p){return !used[p.c]&&p.numRatio>=0.6&&p.med>=5&&p.med<=3000&&p.nums.some(function(x){return x%1!==0||x>40})}).map(function(p){return p.c});
+  var bestP=null,bestS=null,bestOk=0;
+  if(m.prixM2!=null)prof.forEach(function(p){if(used[p.c]||!(p.med>=10000))return;surfs.forEach(function(sc){var ok=0;rows.forEach(function(r){var pv=numOf(r.cells[p.c]),sv=numOf(r.cells[sc]),qv=numOf(r.cells[m.prixM2]);if(pv>0&&sv>0&&qv>0&&Math.abs(sv*qv-pv)<=Math.max(2,pv*0.03))ok++});if(ok>bestOk){bestOk=ok;bestP=p.c;bestS=sc}})});
+  if(bestP!=null){take("prix",bestP);take("surface",bestS)}else if(surfs.length)take("surface",surfs[0]);
+  if(m.prix!=null)take("avance",best(function(p){if(p.numRatio<0.5)return -1;var rs=rows.map(function(r){var a=numOf(r.cells[p.c]),b=numOf(r.cells[m.prix]);return a>0&&b>0?a/b:NaN}).filter(function(x){return !isNaN(x)});var md=median(rs);return md>=0.2&&md<=0.6?rs.length:-1},0));
+  if(m.nom!=null){for(var c2=m.nom+1;c2<maxc;c2++){var pr=prof[c2];if(!used[c2]&&pr&&pr.numRatio>=0.5&&pr.nums.length){take("paye",c2);break}}}
+  take("num",best(function(p){return p.numRatio>0.8&&p.nums.every(function(x){return x%1===0&&x>=0&&x<=1000})&&!(p.med>=500)?1:-1},0));
+  return m;
+}
 function readSheet(XL,ws,name){
-  var rows=XL.utils.sheet_to_json(ws,{header:1,raw:true,defval:""}),hi=-1,map=null;
-  for(var r=0;r<Math.min(rows.length,20);r++){
-    var m={},keys=rows[r].map(headKey);
-    keys.forEach(function(k,i){if(k&&m[k]==null)m[k]=i});
-    if(m.lot!=null&&(m.prix!=null||m.surface!=null||m.prixM2!=null)){hi=r;map=m;break}
+  if(!ws||!ws["!ref"])return null;
+  var rg=XL.utils.decode_range(ws["!ref"]),r0=rg.s.r,c0=rg.s.c;
+  var raw=XL.utils.sheet_to_json(ws,{header:1,raw:true,defval:"",blankrows:true});
+  var grp={};(ws["!merges"]||[]).forEach(function(mg){if(mg.e.c>mg.s.c)grp[(mg.s.r-r0)+","+(mg.s.c-c0)]=1});
+  var txt=function(v){return String(v==null?"":v).replace(/\s+/g," ").trim()};
+  var nonEmpty=function(r){return r.filter(function(v){return txt(v)!==""})};
+  var numCount=function(r){return r.filter(function(v){return typeof v==="number"||(txt(v)!==""&&!isNaN(numOf(v))&&txt(v)!=="-")}).length};
+  var keysOf=function(i){return (raw[i]||[]).map(function(v,c){return grp[i+","+c]||typeof v==="number"?"":headKey(v)})};
+  var qual=function(k){var has=function(x){return k.indexOf(x)>=0};var cnt=["prix","prixAmb","prixM2","surface","nom","avance","paye"].filter(has).length;return (has("lot")||has("num"))&&cnt>=2};
+  var isTotal=function(r){var f=normH(nonEmpty(r)[0]||"");return /^(total|sous total|s\/total|reste|montant total|totaux|surface (appartement|lotissement)?$)/.test(f)&&numCount(r)>=0&&!/^\d/.test(f)};
+  var blocks=[],cur=null,lastMap=null,pending="",warns=[];
+  for(var i=0;i<raw.length;i++){
+    var r=raw[i]||[],ne=nonEmpty(r);if(!ne.length)continue;
+    var k1=keysOf(i),hdr=null,hrows=1;
+    if(numCount(r)<=1){if(qual(k1))hdr=k1;else if(i+1<raw.length&&numCount(raw[i+1]||[])<=1){var k2=keysOf(i+1),km=k1.map(function(x,c){return x||k2[c]||""});for(var c3=k1.length;c3<k2.length;c3++)km[c3]=k2[c3];if(qual(km)){hdr=km;hrows=2}}}
+    if(hdr){
+      var gt="";for(var h=i;h<i+hrows;h++)(raw[h]||[]).forEach(function(v,c){if(grp[h+","+c]&&!gt)gt=txt(v)});
+      var m={};hdr.forEach(function(k,c){if(k&&k!=="skip"&&m[k]==null)m[k]=c});
+      cur={map:m,title:pending||gt||"",rows:[],header:true};blocks.push(cur);lastMap=m;pending="";i+=hrows-1;continue;
+    }
+    var f0=txt(ne[0]);
+    if(isTotal(r))continue;
+    var dataLike=ne.length>=2&&(numCount(r)>=1||r.some(isCode));
+    var titleLike=!numCount(r.filter(function(v,c){return c>0}))&&isNaN(numOf(f0))&&(ne.length===1||k1.filter(function(x){return x}).length>=ne.length-1);
+    if(titleLike&&!(ne.length>=2&&r.some(function(v,ci){return ci>0&&isCode(v)&&!k1[ci]}))){pending=f0;if(cur)lastMap=cur.map;cur=null;continue}
+    if(!dataLike)continue;
+    if(!cur){cur={map:null,inherit:lastMap,title:pending,rows:[],header:false};blocks.push(cur);pending=""}
+    cur.rows.push({i:i,cells:r});
   }
-  if(hi<0)return null;
-  if(map.nom==null&&map.coord!=null){map.nom=map.coord;map.coord=null}
-  if(map.tel==null&&map.coord!=null)map.tel=map.coord;
-  var out=[],warns=[];
-  for(var i=hi+1;i<rows.length;i++){
-    var row=rows[i],g=function(k){return map[k]==null?"":row[map[k]]},line=i+1;
-    var lot=String(g("lot")).trim(),nom=String(g("nom")).replace(/\s+/g," ").trim(),first=normH(row[0]);
-    if(/^total/.test(first)||(!lot&&!nom))continue;
-    var w=function(msg){warns.push("Ligne "+line+(lot?" ("+lot+")":"")+" : "+msg)};
-    var rec={nom:nom,lot:lot,immeuble:String(g("immeuble")).trim(),etage:String(g("etage")).trim(),surface:Math.round(parseNum(g("surface"),w)*100)/100,
-      prixM2:Math.round(parseNum(g("prixM2"),w)),prix:Math.round(parseNum(g("prix"),w)),avance:Math.round(parseNum(g("avance"),w)),dejaPaye:Math.round(parseNum(g("paye"),w)),
-      tel:String(g("tel")).trim(),note:String(g("note")).trim(),section:String(g("section")).trim()};
-    if(!rec.prix&&rec.prixM2&&rec.surface)rec.prix=Math.round(rec.prixM2*rec.surface);
-    if(!rec.prixM2&&rec.prix&&rec.surface)rec.prixM2=Math.round(rec.prix/rec.surface);
-    if(!rec.nom&&rec.dejaPaye)w("montant payé sans nom d'adhérent");
-    out.push(rec);
-  }
-  return {name:name,recs:out,warns:warns};
+  var out=[];
+  blocks.forEach(function(b,bi){
+    if(!b.rows.length)return;
+    var m=b.map?fixMap(Object.assign({},b.map),b.rows):null;
+    if(!m){var inh=b.inherit?fixMap(Object.assign({},b.inherit),b.rows):null;m=(inh&&mapScore(inh,b.rows)>=0.6)?inh:inferMap(b.rows);b.guessed=!(inh&&m===inh)}
+    if(m.lot==null&&m.nom==null)return;
+    var recs=[];
+    b.rows.forEach(function(row){
+      var g=function(k){return m[k]==null?"":row.cells[m[k]]},line=row.i+r0+1;
+      var lot=txt(g("lot")),nom=txt(g("nom")),nm=txt(g("num"));
+      var w=function(msg){warns.push((b.title||"Tableau "+(bi+1))+" · ligne "+line+(lot?" ("+lot+")":"")+" : "+msg)};
+      if(!lot&&nm&&nom)lot="N°"+nm;
+      if(!lot&&!nom)return;
+      var rec={nom:nom,lot:lot,immeuble:txt(g("immeuble")),etage:txt(g("etage"))||etageOf(g("nature")),surface:Math.round(parseNum(g("surface"),w)*100)/100,
+        prixM2:Math.round(parseNum(g("prixM2"),w)),prix:Math.round(parseNum(g("prix"),w)),avance:Math.round(parseNum(g("avance"),w)),dejaPaye:Math.round(parseNum(g("paye"),w)),
+        tel:m.tel!=null&&m.tel!==m.nom?txt(g("tel")):"",note:txt(g("note")),section:txt(g("section")),_reste:numOf(g("reste")),_nature:txt(g("nature")),
+        _src:{sheet:name,row:line,cols:{}}};
+      Object.keys(m).forEach(function(k){rec._src.cols[k]=m[k]+c0});
+      if(!rec.immeuble&&/^[A-Z][-. ]?\d/.test(lot))rec.immeuble=lot.charAt(0);
+      if(!rec.prix&&rec.prixM2&&rec.surface)rec.prix=Math.round(rec.prixM2*rec.surface);
+      if(!rec.prixM2&&rec.prix&&rec.surface)rec.prixM2=Math.round(rec.prix/rec.surface);
+      recs.push(rec);
+    });
+    if(!recs.length)return;
+    var ra=0,rt=0;recs.forEach(function(x){if(isNaN(x._reste))return;if(Math.abs(x.avance-x.dejaPaye-x._reste)<=1)ra++;else if(Math.abs(x.prix-x.dejaPaye-x._reste)<=1)rt++});
+    var resteMode=ra>=rt&&ra>0?"avance":rt>0?"total":"";
+    var numLots=recs.filter(function(x){return /^\d+$/.test(x.lot)}).length>=recs.length*0.6;
+    recs.forEach(function(x){x._src.reste=resteMode;delete x._reste});
+    out.push({title:b.title||"",recs:recs,guessed:!!b.guessed,numLots:numLots});
+  });
+  return out.length?{name:name,blocks:out,warns:warns}:null;
+}
+function guessSection(title,recs,p){
+  var secs=sections(p),t=normH(title);
+  var hit=secs.find(function(sx){var a=normH(sx);return t&&(t===a||t.indexOf(a)>=0||a.indexOf(t)>=0||(a.length>5&&t.indexOf(a.slice(0,6))>=0))});
+  if(hit)return hit;
+  var dg=(t.match(/\d+/)||[])[0];if(dg){var byNum=secs.filter(function(sx){return (normH(sx).match(/\d+/)||[])[0]===dg});if(byNum.length===1)return byNum[0]}
+  var nat=normH((recs[0]&&recs[0]._nature)||"");
+  hit=secs.find(function(sx){return nat&&nat.indexOf(normH(sx).slice(0,5))>=0});
+  return hit||(secs.indexOf(ui.section)>=0?ui.section:"");
 }
 async function startImport(file){
-  if(!P()){notice("Choisissez d'abord un projet.");return}
+  var p=P();if(!p){notice("Choisissez d'abord un projet.");return}
   try{
     var XL=await loadXlsx(),wb=XL.read(new Uint8Array(await file.arrayBuffer()),{type:"array"}),found=[];
-    wb.SheetNames.forEach(function(sn){var r=readSheet(XL,wb.Sheets[sn],sn);if(r&&r.recs.length)found.push(r)});
-    if(!found.length){notice("Aucune liste reconnue dans ce fichier. Il faut au moins les colonnes « Appartement » et « Prix total » (ou « Surface »).");return}
-    found.sort(function(a,b){return b.recs.length-a.recs.length});
-    impState={file:file.name,sheets:found,pick:0,free:true,busy:false};
-    detailId=null;renderImport();$("#detail").hidden=false;
+    wb.SheetNames.forEach(function(sn){var r=readSheet(XL,wb.Sheets[sn],sn);if(r)found.push(r)});
+    if(!found.length){notice("Aucune liste reconnue dans ce fichier. Il faut au moins une colonne avec les appartements ou lots, et une colonne de prix ou de surface.");return}
+    found.forEach(function(f){f.total=f.blocks.reduce(function(t,b){return t+b.recs.length},0)});
+    found.sort(function(a,b){return b.total-a.total});
+    impState={file:file.name,fileObj:file,sheets:found,pick:0,free:true,busy:false,sel:{}};
+    impPrepSel();detailId=null;renderImport();$("#detail").hidden=false;
   }catch(e){notice("Impossible de lire ce fichier Excel.")}
 }
-function impMatch(rec,p){
-  var key=normH(rec.lot);
-  return state.adherents.find(function(a){return a.projet===p.id&&(key?normH(a.lot)===key:(rec.nom&&normH(a.nom)===normH(rec.nom)))});
+function impPrepSel(){var st=impState,p=P();st.sel={};st.sheets[st.pick].blocks.forEach(function(b,bi){st.sel[bi]=guessSection(b.title,b.recs,p)})}
+function impLot(rec,blk,section){return blk.numLots&&/^\d+$/.test(rec.lot)?abbrev(section||blk.title||"Lot")+"-"+rec.lot:rec.lot}
+function impMatch(rec,p,section,lot){
+  var key=normH(lot),list=state.adherents.filter(function(a){return a.projet===p.id});
+  if(key){
+    var m=list.find(function(a){return normH(a.lot)===key&&(a.section||"")===(section||"")});
+    return m||list.find(function(a){return normH(a.lot)===key&&!a.section});
+  }
+  return rec.nom?list.find(function(a){return normH(a.nom)===normH(rec.nom)&&(a.section||"")===(section||"")}):null;
+}
+function impSelected(){
+  var st=impState,p=P(),sh=st.sheets[st.pick],out=[];
+  sh.blocks.forEach(function(b,bi){var sec=st.sel[bi]||"";b.recs.forEach(function(r){if(st.free||r.nom)out.push({r:r,b:b,sec:sec,lot:impLot(r,b,sec)})})});
+  return out;
 }
 function renderImport(){
   var st=impState,p=P();if(!st||!p)return;
-  var sh=st.sheets[st.pick],recs=sh.recs.filter(function(r){return st.free||r.nom}),named=sh.recs.filter(function(r){return r.nom}).length;
-  var upd=recs.filter(function(r){return impMatch(r,p)}).length,paid=sum(recs,"dejaPaye");
+  var sh=st.sheets[st.pick],secs=sections(p),items=impSelected();
+  var named=0,paid=0,upd=0;items.forEach(function(x){if(x.r.nom)named++;paid+=x.r.dejaPaye;if(impMatch(x.r,p,x.sec,x.lot))upd++});
+  var all=sh.blocks.reduce(function(t,b){return t+b.recs.length},0),allNamed=sh.blocks.reduce(function(t,b){return t+b.recs.filter(function(r){return r.nom}).length},0);
   $("#detail-title").textContent="Importer la liste Excel";
-  var h='<p class="s" style="margin:-8px 0 12px">'+esc(st.file)+' → projet <strong>'+esc(p.nom)+'</strong>'+(ui.section?' · '+esc(ui.section):'')+'</p>';
+  var h='<p class="s" style="margin:-8px 0 12px">'+esc(st.file)+' → projet <strong>'+esc(p.nom)+'</strong></p>';
   if(st.sheets.length>1){
     h+='<div class="fields"><label class="full" for="imp-sheet">Feuille à importer<select id="imp-sheet">';
-    st.sheets.forEach(function(x,i){h+='<option value="'+i+'"'+(i===st.pick?" selected":"")+'>'+esc(x.name)+' ('+x.recs.length+' lots, '+x.recs.filter(function(r){return r.nom}).length+' avec un nom)</option>'});
+    st.sheets.forEach(function(x,i){h+='<option value="'+i+'"'+(i===st.pick?" selected":"")+'>'+esc(x.name)+' ('+x.total+' lots)</option>'});
     h+='</select></label></div>';
   }
-  h+='<div class="kpis num" style="margin-top:12px"><div class="kpi"><small>Lots dans la feuille</small><b>'+sh.recs.length+'</b></div><div class="kpi"><small>Avec un adhérent</small><b>'+named+'</b></div><div class="kpi"><small>Montant payé total</small><b>'+dh(paid)+'</b></div><div class="kpi"><small>Déjà dans l\'application</small><b>'+upd+' (mis à jour)</b></div></div>';
-  h+='<div class="fields"><label class="check full" for="imp-free"><input id="imp-free" type="checkbox"'+(st.free?" checked":"")+'>Importer aussi les '+(sh.recs.length-named)+' lots sans nom (affichés « Disponible »)</label></div>';
+  h+='<div class="stack" style="margin-top:10px">';
+  sh.blocks.forEach(function(b,bi){
+    var nb=b.recs.filter(function(r){return r.nom}).length,ex=b.recs.slice(0,2).map(function(r){return [impLot(r,b,st.sel[bi]),r.nom||"disponible",r.prix?num(r.prix)+" DH":""].filter(Boolean).join(" · ")}).join(" | ");
+    h+='<div class="card" style="box-shadow:none"><div class="line"><span class="t">'+esc(b.title||"Tableau "+(bi+1))+'</span>'+pill(b.recs.length+" lots · "+nb+" noms","info")+'</div>'
+      +'<div class="s" style="margin:4px 0 8px">Ex. : '+esc(ex)+(b.guessed?' · <b>colonnes devinées, vérifiez l\'exemple</b>':'')+'</div>'
+      +(secs.length?'<div class="fields"><label class="full" for="imp-sec-'+bi+'">Partie du projet<select id="imp-sec-'+bi+'" data-blk="'+bi+'">'+opts([["","Aucune"]].concat(secs.map(function(x){return [x,x]})),st.sel[bi]||"")+'</select></label></div>':'')+'</div>';
+  });
+  h+='</div>';
+  h+='<div class="kpis num" style="margin-top:12px"><div class="kpi"><small>Lots trouvés</small><b>'+all+'</b></div><div class="kpi"><small>Avec un adhérent</small><b>'+allNamed+'</b></div><div class="kpi"><small>Montant payé total</small><b>'+dh(paid)+'</b></div><div class="kpi"><small>Déjà dans l\'application</small><b>'+upd+' (mis à jour)</b></div></div>';
+  h+='<div class="fields"><label class="check full" for="imp-free"><input id="imp-free" type="checkbox"'+(st.free?" checked":"")+'>Importer aussi les '+(all-allNamed)+' lots sans nom (affichés « Disponible »)</label></div>';
   if(sh.warns.length)h+='<div class="notice" style="margin-top:10px">À vérifier après l\'import ('+sh.warns.length+') :<ul class="imp-list">'+sh.warns.slice(0,12).map(function(w){return "<li>"+esc(w)+"</li>"}).join("")+(sh.warns.length>12?"<li>…</li>":"")+'</ul></div>';
-  h+='<p class="s" style="margin:12px 0 0">Les montants payés deviennent la tranche 1 (« Déjà payé »). Un lot déjà présent (même appartement) est mis à jour sans toucher aux paiements ajoutés dans l\'application.</p>';
-  h+='<p class="err" id="imp-err" role="alert"></p><div class="actions"><span class="sp"></span><button type="button" class="btn ghost" data-a="close-detail">Annuler</button><button type="button" class="btn" id="imp-go" data-a="import-go">Importer '+recs.length+' lots</button></div>';
+  h+='<p class="s" style="margin:12px 0 0">Le fichier est gardé : le bouton Excel des adhérents vous rendra <b>ce même fichier, mis à jour</b> avec les noms et paiements de l\'application. Un lot déjà présent (même partie et même appartement) est mis à jour sans doublon.</p>';
+  h+='<p class="err" id="imp-err" role="alert"></p><div class="actions"><span class="sp"></span><button type="button" class="btn ghost" data-a="close-detail">Annuler</button><button type="button" class="btn" id="imp-go" data-a="import-go">Importer '+items.length+' lots</button></div>';
   $("#detail-body").innerHTML=h;
+}
+async function modelStore(file){
+  if(assets&&assets.storeRaw)return await assets.storeRaw(file);
+  if(assets&&assets.upload){var up=await assets.upload(file);return up&&up.id}
+  return null;
+}
+async function modelLoad(id){
+  if(assets&&assets.get){var f=await assets.get(id);return f.u8}
+  if(standalone&&assets&&assets.url){var u=await assets.url(id);return new Uint8Array(await (await fetch(u)).arrayBuffer())}
+  var r=await fetch("/_blob/"+id);if(!r.ok)throw new Error("modele");return new Uint8Array(await r.arrayBuffer());
 }
 async function runImport(btn){
   var st=impState,p=P();if(!st||!p||st.busy)return;
-  var recs=st.sheets[st.pick].recs.filter(function(r){return st.free||r.nom}),done=0,errEl=$("#imp-err");
-  st.busy=true;btn.disabled=true;
+  var items=impSelected(),done=0,errEl=$("#imp-err");
+  st.busy=true;btn.disabled=true;btn.textContent="Préparation…";
   try{
-    for(var i=0;i<recs.length;i++){
-      var r=recs[i],old=impMatch(r,p),d=Object.assign({},r);
-      d.section=r.section||ui.section||"";d.projet=p.id;d.tranches=r.dejaPaye>0?1:0;
+    var modelId=null;
+    try{modelId=await modelStore(st.fileObj)}catch(e){modelId=null}
+    if(modelId){var pd={};Object.keys(p).forEach(function(k){if(k!=="id")pd[k]=p[k]});pd.modele={fileId:modelId,name:st.file,sheet:st.sheets[st.pick].name,at:new Date().toISOString()};await save("projets",p.id,pd)}
+    for(var i=0;i<items.length;i++){
+      var it=items[i],r=it.r,old=impMatch(r,p,it.sec,it.lot),d=Object.assign({},r);
+      d.lot=it.lot;d.section=it.sec||r.section||"";d.projet=p.id;d.tranches=r.dejaPaye>0?1:0;
+      d.src=modelId?Object.assign({file:modelId,note0:r.note,v0:{nom:r.nom,prix:r.prix,avance:r.avance,paye:r.dejaPaye,tel:r.tel}},r._src):null;delete d._src;delete d._nature;if(!d.src)delete d.src;
       if(old){
         var keep={},hasPays=paysOf(old).length>0;
         Object.keys(old).forEach(function(k){if(k!=="id")keep[k]=old[k]});
-        ["nom","tel","note","section","immeuble","etage"].forEach(function(k){if(!d[k]&&keep[k])d[k]=keep[k]});
+        ["nom","tel","note","immeuble","etage"].forEach(function(k){if(!d[k]&&keep[k])d[k]=keep[k]});
         if(hasPays){d.dejaPaye=n(keep.dejaPaye);d.tranches=n(keep.tranches)}
         d=Object.assign(keep,d);d.createdAt=old.createdAt||new Date().toISOString();
         await save("adherents",old.id,d);
       }else{d.createdAt=new Date().toISOString();await save("adherents",newId("adherents"),d)}
-      done++;btn.textContent="Import… "+done+"/"+recs.length;
+      done++;btn.textContent="Import… "+done+"/"+items.length;
     }
     closeDetail();notice("");renderAll();
-    notice(done+" lots importés dans "+p.nom+". Vérifiez la liste, puis supprimez le fichier Excel du téléphone si vous voulez.");
+    notice(done+" lots importés dans "+p.nom+"."+(modelId?" Le bouton Excel des adhérents rendra votre fichier mis à jour.":""));
   }catch(e){errEl.textContent=errMsg(e)+" ("+done+" lots déjà importés : relancez l'import, ils seront mis à jour sans doublon.)";btn.disabled=false;st.busy=false;btn.textContent="Reprendre l'import"}
+}
+/* Rend le fichier Excel d'origine, avec les noms, prix et paiements à jour */
+async function buildFromModel(p){
+  var m=p.modele,EJ=await loadExcelJS(),wb=new EJ.Workbook();
+  await wb.xlsx.load(await modelLoad(m.fileId));
+  var extra=[],isF=function(c){var v=c.value;return !!(c.formula||c.sharedFormula||(v&&typeof v==="object"&&(v.formula||v.sharedFormula)))};
+  state.adherents.filter(function(a){return a.projet===p.id}).forEach(function(a){
+    var s2=a.src;if(!s2||s2.file!==m.fileId){if(!isFree(a))extra.push(a);return}
+    var ws=wb.getWorksheet(s2.sheet);if(!ws){if(!isFree(a))extra.push(a);return}
+    var v0=s2.v0||{},skipC={};if(s2.cols.lot!=null)skipC[s2.cols.lot]=1;if(s2.cols.num!=null)skipC[s2.cols.num]=1;
+    var put=function(k,v){var c=s2.cols&&s2.cols[k];if(c==null||skipC[c])return;var cell=ws.getCell(s2.row,c+1);if(isF(cell))return;cell.value=(v===""||v==null||v===0)?null:v};
+    var paid=Math.round(paidOf(a)),prix=n(a.prix),fr=isFree(a),nm=fr?"":String(a.nom||"").trim();
+    var ch={nom:nm!==String(v0.nom||"").trim(),paye:paid!==n(v0.paye),prix:prix!==n(v0.prix),avance:n(a.avance)!==n(v0.avance),tel:(a.tel||"")!==(v0.tel||"")};
+    if(ch.nom&&s2.cols.nom!==s2.cols.lot)put("nom",nm||null);
+    if(ch.paye||ch.nom)put("paye",fr?null:paid);
+    if(ch.prix&&prix)put("prix",prix);
+    if(ch.avance&&n(a.avance))put("avance",n(a.avance));
+    if(ch.tel&&s2.cols.tel!=null&&s2.cols.tel!==s2.cols.nom)put("tel",a.tel||null);
+    if(ch.paye||ch.prix||ch.avance||ch.nom){if(s2.reste==="avance")put("reste",fr?null:Math.round(n(a.avance)-paid));else if(s2.reste==="total")put("reste",fr?null:Math.round(prix-paid))}
+    if(s2.cols.note!=null&&(a.note||"")!==(s2.note0||""))put("note",a.note||null);
+  });
+  var add=[];
+  if(extra.length){var sh=shAdherents();sh.name="Ajouts application";sh.title="Ajoutés dans l'application";var ids={};extra.forEach(function(a){ids[a.id]=1});
+    var srt=state.adherents.filter(inScope).sort(lotSort);sh.rows=sh.rows.filter(function(r,i){return srt[i]&&ids[srt[i].id]});if(sh.rows.length)add.push(sh)}
+  var pay=shPaiements();if(pay.rows.length){pay.name="Paiements application";add.push(pay)}
+  if(add.length)await buildXlsx(add,wb);
+  wb.calcProperties=wb.calcProperties||{};wb.calcProperties.fullCalcOnLoad=true;
+  return new Uint8Array(await wb.xlsx.writeBuffer());
 }
 
 /* ---------- assistant IA ---------- */
@@ -1524,8 +1704,9 @@ $("#ai-in").addEventListener("keydown",function(e){if(e.key==="Enter"&&!e.shiftK
 $("#imp-file").addEventListener("change",function(e){var f=e.target.files&&e.target.files[0];if(f)startImport(f)});
 document.addEventListener("change",function(e){
   if(!impState)return;
-  if(e.target.id==="imp-sheet"){impState.pick=+e.target.value;renderImport()}
+  if(e.target.id==="imp-sheet"){impState.pick=+e.target.value;impPrepSel();renderImport()}
   else if(e.target.id==="imp-free"){impState.free=e.target.checked;renderImport()}
+  else if(e.target.dataset&&e.target.dataset.blk!=null){impState.sel[+e.target.dataset.blk]=e.target.value;renderImport()}
 });
 function authMsg(ex){
   var c=ex&&ex.code;
