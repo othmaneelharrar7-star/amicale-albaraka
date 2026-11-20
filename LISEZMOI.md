@@ -69,18 +69,16 @@ Outils : `resume_general`, `lister_adherents`, `fiche_adherent`, `lister_paiemen
 
 Mise en place (une seule fois) :
 
-1. **Compte dédié dans Firebase** : console Firebase > Authentication > Ajouter un utilisateur, par ex. `claude-mcp@amicale-albaraka.ma` avec un mot de passe long. Pour couper l'accès plus tard, il suffit de désactiver ce compte.
-2. **Cloudflare (gratuit)** : créer un compte sur dash.cloudflare.com, ouvrir *Workers & Pages* une fois (pour activer l'adresse `workers.dev`).
-   - *My Profile > API Tokens > Create Token >* modèle **Edit Cloudflare Workers** → copier le jeton.
-   - L'**Account ID** est affiché à droite de la page *Workers & Pages*.
-3. **Secrets GitHub** (dépôt > Settings > Secrets and variables > Actions > New repository secret) :
-   - `CLOUDFLARE_API_TOKEN` et `CLOUDFLARE_ACCOUNT_ID`
-   - `FB_EMAIL` et `FB_PASSWORD` : le compte dédié de l'étape 1
-   - `MCP_TOKEN` : une longue suite de lettres et chiffres (au moins 24), qui sert de mot de passe dans l'adresse
-4. GitHub > Actions > **Déployer le connecteur MCP** > *Run workflow*. Le résumé affiche l'adresse : `https://amicale-albaraka-mcp.<votre-nom>.workers.dev/mcp/<MCP_TOKEN>`.
-5. Dans Claude : *Paramètres > Connecteurs > Ajouter un connecteur personnalisé*, nom « Amicale Albaraka », coller l'adresse complète. Il est ensuite disponible aussi sur le téléphone.
+1. **Cloudflare (gratuit)** : créer un compte sur dash.cloudflare.com, ouvrir *Workers & Pages* une fois (pour activer l'adresse `workers.dev`).
+2. *Profil > My Profile > API Tokens > Create Token >* modèle **Edit Cloudflare Workers** > *Use template > Continue to summary > Create Token* → copier le jeton.
+3. **GitHub** : dépôt > *Settings > Secrets and variables > Actions > New repository secret* : nom `CLOUDFLARE_API_TOKEN`, valeur = le jeton.
+4. GitHub > *Actions* > **Déployer le connecteur MCP** > *Run workflow*. Le déploiement crée tout seul le compte Firebase `claude-mcp@amicale-albaraka.ma`, son mot de passe et le jeton de l'adresse.
+5. Dans l'application : **Tableau de bord > Connecteur Claude** > *Copier l'adresse*. Dans Claude : *Paramètres > Connecteurs > Ajouter un connecteur personnalisé*, nom « Amicale Albaraka », coller l'adresse.
+6. **Sécurité** : ensuite, dans Firebase > Authentication > *Settings > User actions*, décocher **Enable create (sign-up)**, pour que personne d'autre ne puisse créer un compte.
 
-L'adresse complète donne accès aux données : ne la partagez pas. Pour la changer, modifiez le secret `MCP_TOKEN` puis relancez le déploiement.
+Options : les secrets `MCP_TOKEN`, `FB_EMAIL`, `FB_PASSWORD` et `CLOUDFLARE_ACCOUNT_ID` ne sont plus obligatoires (ils remplacent les valeurs automatiques s'ils existent).
+
+L'adresse complète donne accès aux données : ne la partagez pas. Elle n'est jamais affichée sur GitHub (dépôt public). Pour la changer, créez un nouveau jeton Cloudflare (ou un secret `MCP_TOKEN`), remplacez le secret puis relancez le déploiement.
 
 ## 3. Donner ou retirer l'accès à quelqu'un
 

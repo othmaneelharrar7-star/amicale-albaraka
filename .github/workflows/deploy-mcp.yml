@@ -1,5 +1,10 @@
 name: Déployer le connecteur MCP
 
+# Un seul secret est nécessaire : CLOUDFLARE_API_TOKEN.
+# Le reste (compte Firebase dédié, mot de passe, jeton de l'adresse) est créé automatiquement.
+# L'adresse du connecteur n'est jamais affichée ici (dépôt public) : elle est enregistrée
+# dans la base de l'application et s'affiche dans Tableau de bord > Connecteur Claude.
+
 on:
   workflow_dispatch:
   push:
@@ -11,44 +16,81 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Vérifier les secrets
+
+      - name: Préparer les accès
+        id: prep
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          MCP_TOKEN: ${{ secrets.MCP_TOKEN }}
-          FB_EMAIL: ${{ secrets.FB_EMAIL }}
-          FB_PASSWORD: ${{ secrets.FB_PASSWORD }}
+          CF: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          MCP_TOKEN_OVERRIDE: ${{ secrets.MCP_TOKEN }}
+          FB_EMAIL_OVERRIDE: ${{ secrets.FB_EMAIL }}
+          FB_PASSWORD_OVERRIDE: ${{ secrets.FB_PASSWORD }}
         run: |
-          missing=""
-          for v in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID MCP_TOKEN FB_EMAIL FB_PASSWORD; do
-            [ -z "${!v}" ] && missing="$missing $v"
-          done
-          if [ -n "$missing" ]; then
-            echo "::error::Secrets manquants dans GitHub (Settings > Secrets and variables > Actions) :$missing"
+          if [ -z "$CF" ]; then
+            echo "::error::Ajoutez le secret CLOUDFLARE_API_TOKEN (Settings > Secrets and variables > Actions)."
             exit 1
           fi
-          if [ ${#MCP_TOKEN} -lt 24 ]; then
-            echo "::error::MCP_TOKEN doit contenir au moins 24 caractères."
-            exit 1
+          tok="${MCP_TOKEN_OVERRIDE:-$(printf 'amicale-mcp:%s' "$CF" | sha256sum | cut -c1-40)}"
+          pw="${FB_PASSWORD_OVERRIDE:-$(printf 'amicale-fb:%s' "$CF" | sha256sum | cut -c1-32)Aa1}"
+          email="${FB_EMAIL_OVERRIDE:-claude-mcp@amicale-albaraka.ma}"
+          echo "::add-mask::$tok"
+          echo "::add-mask::$pw"
+          {
+            echo "MCP_TOKEN=$tok"
+            echo "FB_PASSWORD=$pw"
+            echo "FB_EMAIL=$email"
+          } >> "$GITHUB_ENV"
+
+      - name: Compte Firebase du connecteur
+        run: |
+          KEY=$(grep -oP 'FB_API_KEY\s*=\s*"\K[^"]+' mcp/wrangler.toml)
+          echo "FB_API_KEY=$KEY" >> "$GITHUB_ENV"
+          body=$(python3 -c 'import json,os;print(json.dumps({"email":os.environ["FB_EMAIL"],"password":os.environ["FB_PASSWORD"],"returnSecureToken":True}))')
+          r=$(curl -sS -X POST -H 'content-type: application/json' -d "$body" "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=$KEY")
+          if ! echo "$r" | grep -q '"idToken"'; then
+            if echo "$r" | grep -qE 'EMAIL_NOT_FOUND|INVALID_LOGIN_CREDENTIALS'; then
+              r2=$(curl -sS -X POST -H 'content-type: application/json' -d "$body" "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=$KEY")
+              if echo "$r2" | grep -q '"idToken"'; then echo "Compte $FB_EMAIL créé."; r="$r2"
+              elif echo "$r2" | grep -q 'EMAIL_EXISTS'; then
+                echo "::error::Le compte $FB_EMAIL existe déjà avec un autre mot de passe. Supprimez-le dans Firebase > Authentication, puis relancez."
+                exit 1
+              else
+                echo "::error::Impossible de créer le compte $FB_EMAIL : $(echo "$r2" | grep -oP '"message":\s*"\K[^"]+' | head -1). Créez-le dans Firebase > Authentication, ou réactivez temporairement l'inscription."
+                exit 1
+              fi
+            else
+              echo "::error::Connexion Firebase refusée : $(echo "$r" | grep -oP '"message":\s*"\K[^"]+' | head -1)"
+              exit 1
+            fi
+          else
+            echo "Compte $FB_EMAIL OK."
           fi
+          id=$(echo "$r" | python3 -c 'import json,sys;print(json.load(sys.stdin)["idToken"])')
+          echo "::add-mask::$id"
+          echo "FB_ID_TOKEN=$id" >> "$GITHUB_ENV"
+
       - name: Déployer sur Cloudflare
         id: deploy
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: mcp
           secrets: |
             MCP_TOKEN
             FB_EMAIL
             FB_PASSWORD
+
+      - name: Enregistrer l'adresse dans l'application
         env:
-          MCP_TOKEN: ${{ secrets.MCP_TOKEN }}
-          FB_EMAIL: ${{ secrets.FB_EMAIL }}
-          FB_PASSWORD: ${{ secrets.FB_PASSWORD }}
-      - name: Adresse du connecteur
+          BASE: ${{ steps.deploy.outputs.deployment-url }}
         run: |
-          echo "### Connecteur MCP déployé" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Adresse à coller dans Claude : \`${{ steps.deploy.outputs.deployment-url }}/mcp/<votre MCP_TOKEN>\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "Adresse : ${{ steps.deploy.outputs.deployment-url }}/mcp/<votre MCP_TOKEN>"
+          if [ -z "$BASE" ]; then echo "::error::Adresse workers.dev introuvable. Ouvrez une fois Workers & Pages dans Cloudflare pour activer workers.dev, puis relancez."; exit 1; fi
+          URL="${BASE%/}/mcp/$MCP_TOKEN"
+          echo "::add-mask::$URL"
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"resume_general","arguments":{}}}' "$URL")
+          echo "Test du connecteur : HTTP $code"
+          body=$(URL="$URL" python3 -c 'import json,os,datetime;print(json.dumps({"fields":{"mcpUrl":{"stringValue":os.environ["URL"]},"mcpAt":{"stringValue":datetime.datetime.utcnow().isoformat()+"Z"}}}))' )
+          r=$(curl -sS -X PATCH -H "authorization: Bearer $FB_ID_TOKEN" -H 'content-type: application/json' -d "$body" \
+            "https://firestore.googleapis.com/v1/projects/amicale-albaraka/databases/(default)/documents/am_meta/mcp?updateMask.fieldPaths=mcpUrl&updateMask.fieldPaths=mcpAt")
+          echo "$r" | grep -q '"name"' || { echo "::error::Impossible d'enregistrer l'adresse dans Firestore."; exit 1; }
+          echo "### Connecteur MCP déployé ✅" >> "$GITHUB_STEP_SUMMARY"
+          echo "Ouvrez l'application > Tableau de bord > **Connecteur Claude** pour copier l'adresse." >> "$GITHUB_STEP_SUMMARY"
