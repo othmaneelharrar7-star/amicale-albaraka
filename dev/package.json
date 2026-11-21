@@ -1,0 +1,17 @@
+{
+  "name": "amicale-albaraka-dev",
+  "private": true,
+  "description": "Outils de construction et de test de l'application Amicale Albaraka",
+  "scripts": {
+    "build": "python3 build.py",
+    "test": "node tests/make_fixture.js && node tests/smoke.js",
+    "firebase-bundle": "esbuild fb-entry.js --bundle --format=esm --minify --outfile=../app/src/main/assets/firebase.js"
+  },
+  "dependencies": {
+    "esbuild": "^0.28.2",
+    "exceljs": "^4.4.0",
+    "firebase": "^13.4.0",
+    "jsdom": "^31.0.1",
+    "xlsx-js-style": "^1.2.0"
+  }
+}

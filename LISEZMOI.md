@@ -61,6 +61,11 @@ Chaque écran a un bouton vert « Excel » : liste des adhérents (avec tous les
 chèques, factures et dépenses, travaux, documents. Le bouton vert en haut exporte tout le projet sélectionné.
 Le fichier est enregistré dans Téléchargements > Amicale Albaraka puis ouvert avec Excel ou Google Sheets.
 
+## Faire évoluer l'application avec Claude
+
+Tout le code source est dans ce dépôt (`dev/src.html` + `dev/build.py`), avec un guide pour Claude dans `CLAUDE.md`.
+Pour demander une modification : ouvrir **Claude Code** (claude.ai/code ou l'application Claude > Code), choisir le dépôt `amicale-albaraka`, et écrire la demande (« zid liya … »). Claude modifie, teste, et pousse ; GitHub Actions fabrique le nouvel APK.
+
 ## Connecteur MCP pour Claude (lecture seule)
 
 Le dossier `mcp/` contient un petit serveur MCP. Une fois ajouté dans Claude (claude.ai ou l'application Claude), on peut demander à Claude la situation des projets, la liste des adhérents, les paiements, les chèques, les factures, les travaux et les documents. Le connecteur **ne modifie jamais** les données.

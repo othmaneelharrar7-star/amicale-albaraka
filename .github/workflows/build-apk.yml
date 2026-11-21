@@ -3,7 +3,7 @@ name: Construire l'APK
 on:
   push:
     branches: [main]
-    paths-ignore: ["mcp/**", ".github/workflows/deploy-mcp.yml", "LISEZMOI.md"]
+    paths-ignore: ["mcp/**", ".github/workflows/deploy-mcp.yml", "LISEZMOI.md", "CLAUDE.md"]
   workflow_dispatch:
 
 jobs:
@@ -11,6 +11,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: dev/package-lock.json
+      - name: Construire la page de l'application depuis dev/src.html
+        run: python3 dev/build.py
+      - name: Tester l'application
+        working-directory: dev
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
