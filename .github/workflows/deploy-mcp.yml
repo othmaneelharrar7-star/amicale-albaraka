@@ -86,7 +86,11 @@ jobs:
           if [ -z "$BASE" ]; then echo "::error::Adresse workers.dev introuvable. Ouvrez une fois Workers & Pages dans Cloudflare pour activer workers.dev, puis relancez."; exit 1; fi
           URL="${BASE%/}/mcp/$MCP_TOKEN"
           echo "::add-mask::$URL"
-          code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"resume_general","arguments":{}}}' "$URL")
+          code=000
+          for i in 1 2 3 4 5; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"resume_general","arguments":{}}}' "$URL" || true)
+            [ "$code" = "200" ] && break; sleep 5
+          done
           echo "Test du connecteur : HTTP $code"
           body=$(URL="$URL" python3 -c 'import json,os,datetime;print(json.dumps({"fields":{"mcpUrl":{"stringValue":os.environ["URL"]},"mcpAt":{"stringValue":datetime.datetime.utcnow().isoformat()+"Z"}}}))' )
           r=$(curl -sS -X PATCH -H "authorization: Bearer $FB_ID_TOKEN" -H 'content-type: application/json' -d "$body" \
