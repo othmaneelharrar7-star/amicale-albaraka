@@ -180,15 +180,15 @@ const TOOL_FN = {
     return "# " + (x.nom || "Lot disponible") + " — lot " + x.lot + "\nProjet : " + pName(s, x.projet) + (x.section ? " · " + x.section : "") + "\n"
       + [x.immeuble ? "Immeuble " + x.immeuble : "", x.etage, x.surface ? x.surface + " m²" : "", x.prixM2 ? num(x.prixM2) + " DH/m²" : ""].filter(Boolean).join(" · ")
       + "\nTéléphone : " + (x.tel || "—") + "\nPrix total : " + dh(x.prix) + "\nAvance exigée : " + (x.avance ? dh(x.avance) : "—")
-      + "\nPayé : " + dh(q) + " (" + pct(q, n(x.prix)) + " %) dont déjà payé à l'import " + dh(x.dejaPaye) + "\nReste à payer : " + dh(Math.max(0, n(x.prix) - q)) + "\nTranche atteinte : " + trancheOf(s, x)
+      + "\nPayé : " + dh(q) + " (" + pct(q, n(x.prix)) + " %) dont déjà payé (fiche) " + dh(x.dejaPaye) + (x.refCheque || x.banque ? " — chèque " + [x.refCheque, x.banque].filter(Boolean).join(", ") : "") + "\nReste à payer : " + dh(Math.max(0, n(x.prix) - q)) + "\nTranche atteinte : " + trancheOf(s, x)
       + (x.note ? "\nNote : " + x.note : "") + "\n\n## Paiements saisis (" + pays.length + ")\n"
-      + table(["Date", "Montant", "Tranche", "Mode", "Référence", "Note"], pays.map(y => [fdate(y.date), dh(y.montant), y.tranche || "", y.mode || "", y.reference || "", y.note || ""]));
+      + table(["Date", "Montant", "Tranche", "Mode", "Référence", "Banque", "Note"], pays.map(y => [fdate(y.date), dh(y.montant), y.tranche || "", y.mode || "", y.reference || "", y.banque || "", y.note || ""]));
   },
   lister_paiements(s, a) {
     const p = a.projet ? findProj(s, a.projet) : null;
     const l = s.paiements.filter(y => (!p || y.projet === p.id) && (!a.depuis || String(y.date) >= a.depuis) && (!a.jusqua || String(y.date) <= a.jusqua)).sort((x, y) => String(y.date || "").localeCompare(String(x.date || "")));
-    const rows = l.map(y => { const ad = s.adherents.find(z => z.id === y.adherentId) || {}; return [fdate(y.date), pName(s, y.projet), ad.nom || "", ad.lot || "", dh(y.montant), y.tranche || "", y.mode || "", y.reference || ""]; });
-    return "# Paiements" + (p ? " — " + p.nom : "") + " : " + l.length + " · total " + dh(sum(l)) + "\n\n" + table(["Date", "Projet", "Adhérent", "Lot", "Montant", "Tranche", "Mode", "Réf."], rows);
+    const rows = l.map(y => { const ad = s.adherents.find(z => z.id === y.adherentId) || {}; return [fdate(y.date), pName(s, y.projet), ad.nom || "", ad.lot || "", dh(y.montant), y.tranche || "", y.mode || "", y.reference || "", y.banque || ""]; });
+    return "# Paiements" + (p ? " — " + p.nom : "") + " : " + l.length + " · total " + dh(sum(l)) + "\n\n" + table(["Date", "Projet", "Adhérent", "Lot", "Montant", "Tranche", "Mode", "Réf.", "Banque"], rows);
   },
   lister_cheques(s, a) {
     const p = a.projet ? findProj(s, a.projet) : null;
