@@ -1767,7 +1767,7 @@ function aiReset(){
 function aiOpen(){if(!$("#ai-msgs").children.length)aiReset();$("#ai").hidden=false;setTimeout(function(){try{$("#ai-in").focus()}catch(e){}},50)}
 function aiClose(){$("#ai").hidden=true}
 /* ---------- Tableau de bord ---------- */
-var APP_VERSION="2.4",ACCOUNT=null;
+var APP_VERSION="2.5",ACCOUNT=null;
 var EYE_ON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 var EYE_OFF='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.6 10.6 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6A17 17 0 0 0 2 12s3.6 7 10 7a9.8 9.8 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
 function pwEyes(root){
@@ -1834,6 +1834,9 @@ function dashHTML(){
   if(ACCOUNT&&ACCOUNT.getMcp){
     h+='<h3>Connecteur Claude (MCP)</h3><div class="card" id="dash-mcp"><span class="s">Chargement…</span></div>';
   }
+  h+='<h3>Améliorer l\'application</h3><div class="card"><label for="dev-req" class="s" style="display:block;margin-bottom:8px">Écrivez ce que vous voulez changer ou ajouter (en darija ou en français). Claude Code s\'ouvrira avec votre demande pour modifier l\'application.</label>'
+    +'<textarea id="dev-req" rows="3" style="width:100%;border-radius:16px;border:1px solid rgba(59,115,197,.25);padding:12px;font:inherit;background:rgba(255,255,255,.8)" placeholder="Ex. Zid case dyal CIN f les adhérents"></textarea>'
+    +'<p class="s" id="dev-msg" role="status" style="margin:8px 0 0"></p><div class="actions"><span class="sp"></span><button type="button" class="btn" data-a="dev-send">Envoyer à Claude</button></div></div>';
   if(GEM){
     h+='<h3>Assistant IA</h3><div class="card"><div class="line"><span class="s">Modèle utilisé</span><span class="t">'+esc(AI_MODELS[AI_GOOD])+'</span></div><div class="actions"><button type="button" class="btn ghost" data-a="ai-model-reset">Rechercher le modèle le plus rapide</button></div></div>';
   }
@@ -1850,6 +1853,22 @@ async function dashMcp(){
   box.innerHTML='<div class="s" style="margin-bottom:8px">Adresse à coller dans Claude : Paramètres &gt; Connecteurs &gt; Ajouter un connecteur personnalisé. Elle donne accès aux données (lecture seule) : ne la partagez pas.</div>'
     +'<label for="mcp-url" style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">Adresse du connecteur</label><input id="mcp-url" class="search" style="width:100%;font-size:13px" readonly value="'+esc(d.mcpUrl)+'">'
     +'<div class="actions"><span class="s" id="mcp-msg" role="status" style="align-self:center"></span><span class="sp"></span><button type="button" class="btn" data-a="mcp-copy">Copier l\'adresse</button></div>';
+}
+function copyText(t){
+  return new Promise(function(ok){
+    var fb=function(){var ta=document.createElement("textarea");ta.value=t;ta.setAttribute("readonly","");ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);ta.select();var r=false;try{r=document.execCommand("copy")}catch(e){}ta.remove();ok(r)};
+    try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(function(){ok(true)},fb);return}}catch(e){}
+    fb();
+  });
+}
+async function devSend(){
+  var ta=$("#dev-req"),msg=$("#dev-msg"),t=(ta&&ta.value||"").trim();
+  if(!t){msg.textContent="Écrivez d'abord votre demande.";ta.focus();return}
+  var prompt="Dépôt GitHub othmaneelharrar7-star/amicale-albaraka (lis d'abord CLAUDE.md). Modification demandée par le bureau dans l'application (version "+APP_VERSION+") :\n\n"+t+"\n\nFais la modification, teste, augmente la version, pousse sur main, puis explique-moi en darija comment installer le nouvel APK.";
+  var ok=await copyText(prompt);
+  msg.textContent=ok?"Demande copiée. Dans Claude Code : choisissez le dépôt amicale-albaraka, appui long dans la zone de texte → Coller, puis envoyez.":"Copiez votre demande, puis collez-la dans Claude Code (dépôt amicale-albaraka).";
+  var url="https://claude.ai/code";
+  setTimeout(function(){if(window.AndroidBridge)location.href=url;else window.open(url,"_blank","noopener")},ok?900:2500);
 }
 function mcpCopy(){
   var inp=$("#mcp-url"),msg=$("#mcp-msg");if(!inp)return;
@@ -2028,6 +2047,7 @@ document.addEventListener("click",function(e){
   else if(a==="dash")dashOpen();
   else if(a==="dash-close")dashClose();
   else if(a==="mcp-copy")mcpCopy();
+  else if(a==="dev-send")devSend();
   else if(a==="dash-go"){dashClose();if(id){ui.projet=id;ui.section="";remember()}if(el.dataset.v==="documents"&&!id)ui.scope="asso";location.hash="#"+el.dataset.v;setView(el.dataset.v)}
   else if(a==="ai-model-reset"){AI_GOOD=0;try{localStorage.removeItem("am-ai-model")}catch(e3){}el.textContent="Fait : le prochain message cherchera le meilleur modèle";el.disabled=true}
   else if(a==="logout"){dashClose();if(ACCOUNT)ACCOUNT.logout()}

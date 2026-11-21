@@ -132,6 +132,11 @@ async function fill(vals){for(const k in vals){const el=$('#form').elements[k];i
    console.log('resume:',JSON.stringify(X.utils.sheet_to_json(wb.Sheets['Résumé'],{header:1}).slice(0,7)));
    const pp=X.utils.sheet_to_json(wb.Sheets['Paiements'],{header:1});console.log('paiements tab:',JSON.stringify(pp.slice(1,3)),JSON.stringify(pp[pp.length-1]));
    fs.writeFileSync(path.join(OUT,'all.xlsx'),Buffer.from(f.b,'base64'));}
+  // demande de modification envoyée à Claude
+  click($('#btn-dash'));await sleep(30);click(d.querySelector('[data-a=dev-send]'));await sleep(20);console.log('dev empty:',$('#dev-msg').textContent);
+  $('#dev-req').value='Zid case CIN';click(d.querySelector('[data-a=dev-send]'));await sleep(50);console.log('dev sent:',$('#dev-msg').textContent.slice(0,40));
+  if(!/Écrivez/.test(d.body.textContent)&&!$('#dev-msg').textContent)errs.push('dev-send');
+  click(d.querySelector('#dash [data-a=dash-close]'));
   console.log('errors:',errs);
   if(errs.length){console.error('ÉCHEC : erreurs JavaScript');process.exitCode=1}else console.log('OK : test réussi');
   process.exit(process.exitCode||0);
