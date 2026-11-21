@@ -162,6 +162,29 @@ async function fill(vals){for(const k in vals){const el=$('#form').elements[k];i
   click(d.querySelector('#view [data-sid="'+bung+'"]'));click($('#sel-del'));click($('#sel-del'));await sleep(100);
   console.log('sel: adhérent supprimé',!w.__store.am_adherents[bung]);
   if(w.__store.am_adherents[bung])errs.push('multi delete adherent');
+  // import Val d'Or : « Surface lotissement » puis « LOT 2 » → Résidence 1 et 2, commerces « Im C - M1 » → immeuble C (v2.6)
+  {const X=require('xlsx-js-style');const rows=[['Commerce'],['Commerce',1,30,'Im C - M1',10000,300000,120000,'TEST COM',50000],['Commerce',2,35,'Im C - M2',10000,350000,140000,'TEST COM2',60000],
+    [],['Surface lotissement'],['N lot ','surface','Prix ','Total','Avance ','Adhérent','Montant payé '],[1,300,9500,2850000,1140000,'TEST UN',100000],[2,300,9500,2850000,1140000,'',''],
+    ['SOUS Total',600],['LOT 2'],[1,250,9500,2375000,950000,'TEST DEUX',200000],[2,250,9500,2375000,950000,'TEST TROIS',0]];
+   const wb2=X.utils.book_new();X.utils.book_append_sheet(wb2,X.utils.aoa_to_sheet(rows),'Feuil1');const b2=X.write(wb2,{type:'buffer',bookType:'xlsx'});
+   click([...d.querySelectorAll('#pills button')].find(b=>b.textContent==="Val d'Or"));await sleep(30);
+   const f2=new w.File([b2],'vd.xlsx');if(!f2.arrayBuffer)f2.arrayBuffer=async()=>b2.buffer.slice(b2.byteOffset,b2.byteOffset+b2.length);
+   const inp2=$('#imp-file');Object.defineProperty(inp2,'files',{value:[f2],configurable:true});inp2.dispatchEvent(new w.Event('change',{bubbles:true}));await sleep(400);
+   const secs=[...d.querySelectorAll('#detail-body select[data-blk]')].map(s=>s.value);console.log('valdor import parties:',secs.join(' | '));
+   if(secs.join('|')!=='Commerce|Résidence 1|Résidence 2')errs.push('valdor sections');
+   click($('#imp-go'));for(let i=0;i<200&&!$('#detail').hidden;i++)await sleep(50);
+   const vd=Object.values(w.__store.am_adherents).filter(a=>/^TEST (COM|UN|DEUX)$/.test(a.nom));console.log('valdor lots:',JSON.stringify(vd.map(a=>[a.section,a.lot,a.immeuble||''])));
+   if(!vd.some(a=>a.lot==='R1-1'&&a.section==='Résidence 1')||!vd.some(a=>a.lot==='R2-1')||!vd.some(a=>a.immeuble==='C'))errs.push('valdor lots');
+   // Excel adhérents : une partie → seulement cette partie ; « Tout » → fichier d'origine complet (v2.7)
+   const xlOf=async()=>{w.__saved.length=0;click(d.querySelector('#view [data-a=xl][data-id=adherents]'));for(let i=0;i<100&&!w.__saved.length;i++)await sleep(50);return w.__saved.pop()};
+   click([...d.querySelectorAll('#seg button')].find(b=>b.textContent==='Résidence 1'));await sleep(30);
+   let fx=await xlOf();let wx=X.read(Buffer.from(fx.b,'base64'));let txt=JSON.stringify(X.utils.sheet_to_json(wx.Sheets[wx.SheetNames[0]],{header:1}));
+   console.log('excel R1:',fx.n,'| R1-1',/R1-1/.test(txt),'| R2/Commerce',/R2-1|Im C/.test(txt));
+   if(!/R1-1/.test(txt)||/R2-1|Im C/.test(txt)||/à jour/.test(fx.n))errs.push('excel partie');
+   click([...d.querySelectorAll('#seg button')].find(b=>b.textContent==='Tout'));await sleep(30);
+   fx=await xlOf();wx=X.read(Buffer.from(fx.b,'base64'));txt=JSON.stringify(X.utils.sheet_to_json(wx.Sheets[wx.SheetNames[0]],{header:1}));
+   console.log('excel Tout:',fx.n,'| tout dedans',/TEST UN/.test(txt)&&/TEST DEUX/.test(txt)&&/TEST COM/.test(txt));
+   if(!/à jour/.test(fx.n)||!/TEST DEUX/.test(txt)||!/TEST COM/.test(txt))errs.push('excel tout');}
   console.log('errors:',errs);
   if(errs.length){console.error('ÉCHEC : erreurs JavaScript');process.exitCode=1}else console.log('OK : test réussi');
   process.exit(process.exitCode||0);

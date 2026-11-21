@@ -1207,7 +1207,8 @@ async function exportXl(kind,btn){
   if(btn){btn.disabled=true;btn.setAttribute("aria-busy","true")}
   try{
     var u8;
-    if(kind==="adherents"&&p&&p.modele&&p.modele.fileId){
+    /* fichier d'origine complet seulement sur « Tout » ; une partie choisie (Appartements, Résidence 1…) donne une liste de cette partie seulement */
+    if(kind==="adherents"&&p&&p.modele&&p.modele.fileId&&!ui.section){
       try{u8=await buildFromModel(p);name=String(p.modele.name||"Adhérents").replace(/\.xlsx?$/i,"")+" (à jour)"}
       catch(e2){u8=null}
     }
@@ -1358,6 +1359,7 @@ function readSheet(XL,ws,name){
         _src:{sheet:name,row:line,cols:{}}};
       Object.keys(m).forEach(function(k){rec._src.cols[k]=m[k]+c0});
       if(!rec.immeuble&&/^[A-Z][-. ]?\d/.test(lot))rec.immeuble=lot.charAt(0);
+      if(!rec.immeuble){var im=lot.match(/^imm?(?:euble)?\.?\s*([A-Z])\b/i);if(im)rec.immeuble=im[1].toUpperCase()}
       if(!rec.prix&&rec.prixM2&&rec.surface)rec.prix=Math.round(rec.prixM2*rec.surface);
       if(!rec.prixM2&&rec.prix&&rec.surface)rec.prixM2=Math.round(rec.prix/rec.surface);
       recs.push(rec);
@@ -1392,7 +1394,14 @@ async function startImport(file){
     impPrepSel();detailId=null;renderImport();$("#detail").hidden=false;
   }catch(e){notice("Impossible de lire ce fichier Excel.")}
 }
-function impPrepSel(){var st=impState,p=P();st.sel={};st.sheets[st.pick].blocks.forEach(function(b,bi){st.sel[bi]=guessSection(b.title,b.recs,p)})}
+function impPrepSel(){
+  var st=impState,p=P(),bl=st.sheets[st.pick].blocks;st.sel={};
+  bl.forEach(function(b,bi){st.sel[bi]=guessSection(b.title,b.recs,p)});
+  /* tableaux de lots numérotés sans partie trouvée (« Surface lotissement » puis « LOT 2 ») : on leur donne, dans l'ordre, les parties « Résidence / Lot / Bungalows » encore libres */
+  var used={};Object.keys(st.sel).forEach(function(k){if(st.sel[k])used[st.sel[k]]=1});
+  var free=sections(p).filter(function(sx){return !used[sx]&&/residence|lot|bungalow|villa/.test(normH(sx))});
+  bl.forEach(function(b,bi){if(!st.sel[bi]&&b.numLots&&free.length)st.sel[bi]=free.shift()});
+}
 function impLot(rec,blk,section){return blk.numLots&&/^\d+$/.test(rec.lot)?abbrev(section||blk.title||"Lot")+"-"+rec.lot:rec.lot}
 function impMatch(rec,p,section,lot){
   var key=normH(lot),list=state.adherents.filter(function(a){return a.projet===p.id});
@@ -1872,7 +1881,7 @@ function aiReset(){
 function aiOpen(){if(!$("#ai-msgs").children.length)aiReset();$("#ai").hidden=false;setTimeout(function(){try{$("#ai-in").focus()}catch(e){}},50)}
 function aiClose(){$("#ai").hidden=true}
 /* ---------- Tableau de bord ---------- */
-var APP_VERSION="2.6",ACCOUNT=null;
+var APP_VERSION="2.7",ACCOUNT=null;
 var EYE_ON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 var EYE_OFF='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.6 10.6 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6A17 17 0 0 0 2 12s3.6 7 10 7a9.8 9.8 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
 function pwEyes(root){
