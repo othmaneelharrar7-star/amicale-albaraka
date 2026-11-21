@@ -137,6 +137,31 @@ async function fill(vals){for(const k in vals){const el=$('#form').elements[k];i
   $('#dev-req').value='Zid case CIN';click(d.querySelector('[data-a=dev-send]'));await sleep(50);console.log('dev sent:',$('#dev-msg').textContent.slice(0,40));
   if(!/Écrivez/.test(d.body.textContent)&&!$('#dev-msg').textContent)errs.push('dev-send');
   click(d.querySelector('#dash [data-a=dash-close]'));
+  // sélection multiple + suppression (v2.6)
+  w.location.hash='#cheques';await sleep(50);
+  for(const nu of ['S1','S2','S3']){click(d.querySelector('#view [data-a=new][data-col=cheques]'));await sleep(20);$('#form').elements.numero.value=nu;$('#form').elements.montant.value='1000';submit('#form');await sleep(60);}
+  const nChq=()=>Object.values(w.__store.am_cheques||{}).filter(c=>/^S[123]$/.test(c.numero)).length;
+  console.log('sel: chèques créés',nChq());
+  click(d.querySelector('#view [data-a=sel-start]'));await sleep(20);
+  if($('#selbar').hidden)errs.push('selbar hidden');
+  const cards=[...d.querySelectorAll('#view [data-sid]')].filter(c=>/S1|S2/.test(c.textContent));
+  cards.forEach(c=>click(c));await sleep(10);
+  console.log('sel: compteur',$('#sel-cnt').textContent,'| form ouvert ?',!$('#overlay').hidden);
+  if(!$('#overlay').hidden)errs.push('card opened form in select mode');
+  click($('#sel-del'));await sleep(10);console.log('sel: confirmation',$('#sel-cnt').textContent,'/',$('#sel-del').textContent);
+  if(nChq()!==3)errs.push('deleted before confirm');
+  click($('#sel-del'));await sleep(100);
+  console.log('sel: restants',nChq(),'| barre cachée',$('#selbar').hidden);
+  if(nChq()!==1||!$('#selbar').hidden)errs.push('multi delete cheques');
+  // adhérents : suppression avec leurs paiements
+  w.location.hash='#adherents';await sleep(50);
+  click([...d.querySelectorAll('#pills button')].find(b=>b.textContent==='Casino 1'));await sleep(30);
+  const bung=Object.entries(w.__store.am_adherents).find(([k,v])=>v.nom==='TEST BUNG')[0];
+  w.__store.am_paiements=w.__store.am_paiements||{};
+  click(d.querySelector('#view [data-a=sel-start]'));await sleep(20);
+  click(d.querySelector('#view [data-sid="'+bung+'"]'));click($('#sel-del'));click($('#sel-del'));await sleep(100);
+  console.log('sel: adhérent supprimé',!w.__store.am_adherents[bung]);
+  if(w.__store.am_adherents[bung])errs.push('multi delete adherent');
   console.log('errors:',errs);
   if(errs.length){console.error('ÉCHEC : erreurs JavaScript');process.exitCode=1}else console.log('OK : test réussi');
   process.exit(process.exitCode||0);
