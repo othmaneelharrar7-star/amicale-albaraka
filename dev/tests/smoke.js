@@ -192,6 +192,11 @@ async function fill(vals){for(const k in vals){const el=$('#form').elements[k];i
    const m2=$('#fld-prixM2');m2.value='10000';m2.dispatchEvent(new w.Event('input',{bubbles:true}));
    console.log('calc: prix',$('#fld-prix').value,'avance',$('#fld-avance').value);
    if($('#fld-prix').value!=='3000000'||$('#fld-avance').value!=='1200000')errs.push('calc avance');
+   const inp=(id,v)=>{const e=$(id);e.value=v;e.dispatchEvent(new w.Event('input',{bubbles:true}))};
+   inp('#fld-prix','3300000');console.log('calc prix→ m2',$('#fld-prixM2').value,'avance',$('#fld-avance').value);
+   if($('#fld-prixM2').value!=='11000'||$('#fld-avance').value!=='1320000')errs.push('calc prix');
+   inp('#fld-avance','1200000');console.log('calc avance→ prix',$('#fld-prix').value,'m2',$('#fld-prixM2').value,'| ligne:',$('#adh-calc').textContent);
+   if($('#fld-prix').value!=='3000000'||$('#fld-prixM2').value!=='10000'||!/Reste/.test($('#adh-calc').textContent))errs.push('calc avance2');
    submit('#form');await sleep(60);const v=w.__store.am_adherents[id];console.log('calc saved:',v.prix,v.avance,'src kept',!!v.src);
    if(v.avance!==1200000)errs.push('calc save');
    click(d.querySelector('[data-a=close-detail]'));await sleep(20);}

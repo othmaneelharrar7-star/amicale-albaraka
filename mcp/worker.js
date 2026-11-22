@@ -109,10 +109,11 @@ function adhData(a, old) {
   const d = {};
   for (const k in ADH_FIELDS) { if (a[k] === undefined || a[k] === null) continue; d[k] = ADH_FIELDS[k] === "n" ? numArg(a[k], k) : String(a[k]).trim(); }
   const sf = d.surface !== undefined ? d.surface : n(old && old.surface), m2 = d.prixM2 !== undefined ? d.prixM2 : n(old && old.prixM2);
+  /* mêmes calculs que la fiche de l'application : surface × prix au m² = prix ; avance = 40 % du prix */
+  if (d.prix === undefined && d.avance !== undefined && d.prixM2 === undefined && d.surface === undefined && d.avance > 0) d.prix = Math.round(d.avance / 0.4);
   if (d.prix === undefined && (d.surface !== undefined || d.prixM2 !== undefined) && sf > 0 && m2 > 0) d.prix = Math.round(sf * m2);
-  /* avance exigée = 40 % du prix, sauf si elle est donnée ou avait été fixée à la main */
-  const oP = n(old && old.prix), oA = n(old && old.avance);
-  if (d.avance === undefined && d.prix > 0 && (!oA || (oP > 0 && Math.abs(oA - oP * 0.4) <= 2))) d.avance = Math.round(d.prix * 0.4);
+  if (d.prix !== undefined && d.prixM2 === undefined && sf > 0 && d.prix > 0) d.prixM2 = Math.round(d.prix / sf * 100) / 100;
+  if (d.avance === undefined && d.prix > 0) d.avance = Math.round(d.prix * 0.4);
   return d;
 }
 const adhLine = (s, x, d) => (d.nom !== undefined ? d.nom : x.nom || "Lot disponible") + " · lot " + x.lot + " · " + pName(s, x.projet) + (x.section ? " · " + x.section : "");
@@ -265,7 +266,7 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { projet: { type: "string", description: "Nom du projet, ou « association » pour les documents de l'association. Tous si absent." } } } }
 ].map(t => Object.assign(t, { annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }));
 const P_ADH = { projet: { type: "string", description: "Nom du projet (ex. Val d'Or)" }, partie: { type: "string", description: "Partie du projet si besoin (Appartements, Résidence 1, Résidence 2, Commerce…)" }, lot: { type: "string", description: "Appartement ou lot (ex. C15, R1-6)" } };
-const P_FIELDS = { nom: { type: "string", description: "Nom et prénom" }, tel: { type: "string" }, surface: { type: "number", description: "m²" }, prixM2: { type: "number", description: "Prix au m² (DH). Le prix total est recalculé avec la surface si « prix » n'est pas donné." }, prix: { type: "number", description: "Prix total (DH)" }, avance: { type: "number", description: "Avance exigée (DH). Si absente : 40 % du prix, recalculée quand le prix change." }, etage: { type: "string" }, immeuble: { type: "string" }, note: { type: "string" } };
+const P_FIELDS = { nom: { type: "string", description: "Nom et prénom" }, tel: { type: "string" }, surface: { type: "number", description: "m²" }, prixM2: { type: "number", description: "Prix au m² (DH). Le prix total est recalculé avec la surface si « prix » n'est pas donné." }, prix: { type: "number", description: "Prix total (DH)" }, avance: { type: "number", description: "Avance exigée (DH). Si absente : 40 % du prix, recalculée quand le prix change ; donnée seule, elle recalcule le prix (avance / 40 %)." }, etage: { type: "string" }, immeuble: { type: "string" }, note: { type: "string" } };
 const WRITE_TOOLS = [
   { name: "modifier_adherent", title: "Modifier la fiche d'un adhérent",
     description: "Modifie la fiche d'un lot existant (nom, téléphone, surface, prix au m², prix, avance exigée, note…). Seuls les champs donnés changent. Ne pas utiliser pour un paiement : utiliser ajouter_paiement.",

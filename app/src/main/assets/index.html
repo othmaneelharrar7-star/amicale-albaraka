@@ -79,6 +79,9 @@ main{padding:2px 16px 120px;display:flex;flex-direction:column;gap:10px}
 .fab svg{width:22px;height:22px}
 .fab[hidden]{display:none}
 body.selmode .fab{display:none}
+.calc{grid-column:1/-1;margin:2px 0 0;padding:10px 12px;border-radius:14px;background:var(--blue-soft);color:var(--blue-ink);font-size:13px}
+.calc:empty{display:none}
+.ok-t{color:#2E8B3E}
 .selbar{position:fixed;left:0;right:0;bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:8;padding:0 16px;pointer-events:none}
 .selbar[hidden]{display:none}
 .selbar>div{pointer-events:auto;max-width:520px;margin:0 auto;background:#fff;border:1.5px solid var(--blue);border-radius:22px;padding:10px;display:flex;flex-wrap:wrap;align-items:center;gap:8px;box-shadow:0 12px 28px rgba(10,31,68,.28)}
@@ -449,7 +452,7 @@ var SCH={
     {k:"surface",l:"Surface (m²)",t:"number"},
     {k:"prixM2",l:"Prix au m² (DH)",t:"number"},
     {k:"prix",l:"Prix total (DH, calculé si vide)",t:"number"},
-    {k:"avance",l:"Avance exigée (DH, 40 % du prix si vide)",t:"number"},
+    {k:"avance",l:"Avance exigée (DH, 40 % du prix)",t:"number"},
     {k:"dejaPaye",l:"Montant déjà payé (DH)",t:"number",ph:"Ex. 2340000"},
     {k:"tranches",l:"Tranche atteinte (numéro)",t:"number",ph:"Ex. 2"},
     {k:"refCheque",l:"N° du chèque (montant déjà payé)",t:"text"},
@@ -1877,7 +1880,7 @@ function aiReset(){
 function aiOpen(){if(!$("#ai-msgs").children.length)aiReset();$("#ai").hidden=false;setTimeout(function(){try{$("#ai-in").focus()}catch(e){}},50)}
 function aiClose(){$("#ai").hidden=true}
 /* ---------- Tableau de bord ---------- */
-var APP_VERSION="2.8",ACCOUNT=null;
+var APP_VERSION="2.9",ACCOUNT=null;
 var EYE_ON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 var EYE_OFF='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.6 10.6 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6A17 17 0 0 0 2 12s3.6 7 10 7a9.8 9.8 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
 function pwEyes(root){
@@ -2046,21 +2049,34 @@ function openSheet(col,id,adh){
   $("#overlay").hidden=false;
 }
 function closeSheet(){$("#overlay").hidden=true;sheet=null}
-/* prix total = prix au m² × surface, avance exigée = 40 % du prix (tant qu'elle n'a pas été tapée à la main) */
+/* calcul automatique dans la fiche : surface × prix au m² = prix total ; avance exigée = 40 % du prix.
+   Quel que soit le chiffre modifié, les autres suivent. En bas : payé, reste et avance manquante en direct. */
 var AVANCE_PCT=0.4;
+function r2(x){return Math.round(x*100)/100}
 function adhPriceCalc(id){
-  var g=function(k){var el=$("#fld-"+k);return el?parseFloat(String(el.value).replace(",","."))||0:0},pr=$("#fld-prix"),av=$("#fld-avance");
-  if(id==="fld-avance"){sheet.avAuto=!String(av.value).trim();return}
-  if((id==="fld-prixM2"||id==="fld-surface")&&pr&&g("prixM2")>0&&g("surface")>0)pr.value=Math.round(g("prixM2")*g("surface"));
-  if(sheet.avAuto&&av&&g("prix")>0)av.value=Math.round(g("prix")*AVANCE_PCT);
+  var el=function(k){return $("#fld-"+k)},g=function(k){var e=el(k);return e?parseFloat(String(e.value).replace(/\s/g,"").replace(",","."))||0:0};
+  var set=function(k,v){var e=el(k);if(e&&e.id!==id)e.value=v>0?String(v):""};
+  var sf=g("surface"),m2=g("prixM2"),pr=g("prix"),av=g("avance");
+  if(id==="fld-surface"||id==="fld-prixM2"){if(sf>0&&m2>0){pr=Math.round(sf*m2);set("prix",pr)}if(pr>0)set("avance",Math.round(pr*AVANCE_PCT))}
+  else if(id==="fld-prix"){if(sf>0&&pr>0)set("prixM2",r2(pr/sf));set("avance",Math.round(pr*AVANCE_PCT))}
+  else if(id==="fld-avance"){if(av>0){pr=Math.round(av/AVANCE_PCT);set("prix",pr);if(sf>0)set("prixM2",r2(pr/sf))}}
+  adhCalcLine();
+}
+function adhCalcLine(){
+  var box=$("#adh-calc");if(!box||!sheet)return;
+  var g=function(k){var e=$("#fld-"+k);return e?parseFloat(String(e.value).replace(/\s/g,"").replace(",","."))||0:0};
+  var pays=sheet.item?sum(state.paiements.filter(function(p){return p.adherentId===sheet.item.id})):0;
+  var pr=g("prix"),av=g("avance"),paid=g("dejaPaye")+pays;
+  if(!pr){box.textContent="";return}
+  box.innerHTML='Payé <b class="num">'+dh(paid)+'</b> · Reste <b class="num">'+dh(Math.max(0,pr-paid))+'</b>'+(av?' · Avance : '+(paid>=av?'<b class="ok-t">atteinte</b>':'manque <b class="num">'+dh(av-paid)+'</b>'):'');
 }
 function adhFormAdjust(){
   if(!sheet||sheet.col!=="adherents")return;
   var p=state.projets.find(function(x){return x.id===sheet.ctx.projet})||P(),se=$("#fld-section");
   var sec=se?se.value:(sheet.item?sheet.item.section:ui.section),show=showEtage(p,sec);
   ["etage","immeuble"].forEach(function(k){var el=$("#fld-"+k);if(el&&el.parentNode)el.parentNode.hidden=!show});
-  var pr=$("#fld-prix"),av=$("#fld-avance"),pv=parseFloat(pr&&pr.value)||0,avv=parseFloat(av&&av.value)||0;
-  sheet.avAuto=!avv||(pv>0&&Math.abs(avv-pv*AVANCE_PCT)<=2);
+  if(!$("#adh-calc")){var c=document.createElement("p");c.id="adh-calc";c.className="s full calc";c.setAttribute("aria-live","polite");$("#form-fields").appendChild(c)}
+  adhCalcLine();
   var lo=$("#fld-lot");if(lo&&lo.parentNode&&lo.parentNode.firstChild&&lo.parentNode.firstChild.nodeType===3){lo.parentNode.firstChild.nodeValue=isBung(p)?"Bungalow":"Appartement ou lot";lo.placeholder=isBung(p)?"Ex. B3":"Ex. A.2"}
 }
 
@@ -2205,7 +2221,7 @@ document.addEventListener("keydown",function(e){
   if((e.key==="Enter"||e.key===" ")&&e.target.matches&&e.target.matches('div[role="button"][data-a],[data-sid][role="checkbox"]')){e.preventDefault();e.target.click()}
 });
 document.addEventListener("input",function(e){
-  if(sheet&&sheet.col==="adherents"&&/^fld-(prixM2|surface|prix|avance)$/.test(e.target.id)){adhPriceCalc(e.target.id);return}
+  if(sheet&&sheet.col==="adherents"&&/^fld-(prixM2|surface|prix|avance|dejaPaye)$/.test(e.target.id)){adhPriceCalc(e.target.id);return}
   var id=e.target.id;
   if(id==="f-q")ui.q=e.target.value;else if(id==="f-dcat")ui.dcat=e.target.value;else return;
   refreshList();
