@@ -9,8 +9,8 @@
   - Un document : déposez le PDF dans le dossier vitrine/documents/ puis ajoutez
       { titre:"…", description:"…", fichier:"documents/nom-du-fichier.pdf", categorie:"Officiel", date:"AAAA-MM-JJ" }
     Sans « fichier », le document s'affiche « Bientôt en ligne ».
-  - Une photo de projet : déposez l'image dans vitrine/ et mettez photo:"mon-image.jpg".
-  - type d'illustration (si pas de photo) : "tours", "residence" ou "bungalow".
+  - Photos : déposez l'image dans vitrine/photos/ puis mettez photo:"photos/mon-image.jpg".
+  - accueil : les photos qui défilent en grand sur la page d'accueil.
   - Laissez un champ vide ("") pour qu'il ne s'affiche pas.
 */
 window.CONTENU = {
@@ -26,6 +26,14 @@ window.CONTENU = {
     email: ""
   },
 
+  accueil: [
+    "photos/panorama-jour.jpg",
+    "photos/facade-commerces.jpg",
+    "photos/panorama-nuit.jpg"
+  ],
+  photoAmicale: "photos/panorama-nuit.jpg",
+  photoContact: "photos/facade-commerces.jpg",
+
   chiffres: [
     { valeur: 4, suffixe: "", label: "projets immobiliers" },
     { valeur: 190, suffixe: "+", label: "familles adhérentes" },
@@ -36,27 +44,24 @@ window.CONTENU = {
   projets: [
     {
       nom: "Val d'Or",
-      type: "residence",
       statut: "En cours",
       lieu: "",
       resume: "Un ensemble complet : appartements, deux résidences et des locaux commerciaux.",
       parties: ["Appartements", "Résidence 1", "Résidence 2", "Commerce"],
       lotsDisponibles: 13,
-      photo: ""
+      photo: "photos/facade-commerces.jpg"
     },
     {
       nom: "Sid El Abed",
-      type: "tours",
       statut: "En cours",
       lieu: "",
       resume: "Des appartements répartis sur plusieurs immeubles et étages.",
       parties: ["Appartements"],
       lotsDisponibles: 26,
-      photo: ""
+      photo: "photos/panorama-jour.jpg"
     },
     {
       nom: "Casino 1",
-      type: "bungalow",
       statut: "Bientôt",
       lieu: "",
       resume: "Des bungalows pensés pour la détente.",
@@ -66,7 +71,6 @@ window.CONTENU = {
     },
     {
       nom: "Casino 2",
-      type: "bungalow",
       statut: "Bientôt",
       lieu: "",
       resume: "La suite du projet Casino : de nouveaux bungalows.",
