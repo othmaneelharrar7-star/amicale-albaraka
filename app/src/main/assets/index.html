@@ -449,7 +449,7 @@ var SCH={
     {k:"surface",l:"Surface (m²)",t:"number"},
     {k:"prixM2",l:"Prix au m² (DH)",t:"number"},
     {k:"prix",l:"Prix total (DH, calculé si vide)",t:"number"},
-    {k:"avance",l:"Avance exigée (DH)",t:"number"},
+    {k:"avance",l:"Avance exigée (DH, 40 % du prix si vide)",t:"number"},
     {k:"dejaPaye",l:"Montant déjà payé (DH)",t:"number",ph:"Ex. 2340000"},
     {k:"tranches",l:"Tranche atteinte (numéro)",t:"number",ph:"Ex. 2"},
     {k:"refCheque",l:"N° du chèque (montant déjà payé)",t:"text"},
@@ -1877,7 +1877,7 @@ function aiReset(){
 function aiOpen(){if(!$("#ai-msgs").children.length)aiReset();$("#ai").hidden=false;setTimeout(function(){try{$("#ai-in").focus()}catch(e){}},50)}
 function aiClose(){$("#ai").hidden=true}
 /* ---------- Tableau de bord ---------- */
-var APP_VERSION="2.7",ACCOUNT=null;
+var APP_VERSION="2.8",ACCOUNT=null;
 var EYE_ON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 var EYE_OFF='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.6 10.6 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6A17 17 0 0 0 2 12s3.6 7 10 7a9.8 9.8 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
 function pwEyes(root){
@@ -2046,11 +2046,21 @@ function openSheet(col,id,adh){
   $("#overlay").hidden=false;
 }
 function closeSheet(){$("#overlay").hidden=true;sheet=null}
+/* prix total = prix au m² × surface, avance exigée = 40 % du prix (tant qu'elle n'a pas été tapée à la main) */
+var AVANCE_PCT=0.4;
+function adhPriceCalc(id){
+  var g=function(k){var el=$("#fld-"+k);return el?parseFloat(String(el.value).replace(",","."))||0:0},pr=$("#fld-prix"),av=$("#fld-avance");
+  if(id==="fld-avance"){sheet.avAuto=!String(av.value).trim();return}
+  if((id==="fld-prixM2"||id==="fld-surface")&&pr&&g("prixM2")>0&&g("surface")>0)pr.value=Math.round(g("prixM2")*g("surface"));
+  if(sheet.avAuto&&av&&g("prix")>0)av.value=Math.round(g("prix")*AVANCE_PCT);
+}
 function adhFormAdjust(){
   if(!sheet||sheet.col!=="adherents")return;
   var p=state.projets.find(function(x){return x.id===sheet.ctx.projet})||P(),se=$("#fld-section");
   var sec=se?se.value:(sheet.item?sheet.item.section:ui.section),show=showEtage(p,sec);
   ["etage","immeuble"].forEach(function(k){var el=$("#fld-"+k);if(el&&el.parentNode)el.parentNode.hidden=!show});
+  var pr=$("#fld-prix"),av=$("#fld-avance"),pv=parseFloat(pr&&pr.value)||0,avv=parseFloat(av&&av.value)||0;
+  sheet.avAuto=!avv||(pv>0&&Math.abs(avv-pv*AVANCE_PCT)<=2);
   var lo=$("#fld-lot");if(lo&&lo.parentNode&&lo.parentNode.firstChild&&lo.parentNode.firstChild.nodeType===3){lo.parentNode.firstChild.nodeValue=isBung(p)?"Bungalow":"Appartement ou lot";lo.placeholder=isBung(p)?"Ex. B3":"Ex. A.2"}
 }
 
@@ -2075,6 +2085,7 @@ async function submitForm(e){
   if(col!=="projets")data.projet=sheet.ctx.projet;
   if(col==="adherents"){
     if(!data.prix&&data.prixM2&&data.surface)data.prix=Math.round(data.prixM2*data.surface);
+    if(!data.avance&&data.prix)data.avance=Math.round(data.prix*AVANCE_PCT);
     if(!data.nom&&!data.lot){err.textContent="Indiquez le nom de l'adhérent ou le numéro de l'appartement.";return}
     if(!data.prix){err.textContent="Indiquez le prix total, ou le prix au m² et la surface.";return}
     if(!old&&data.lot){
@@ -2194,6 +2205,7 @@ document.addEventListener("keydown",function(e){
   if((e.key==="Enter"||e.key===" ")&&e.target.matches&&e.target.matches('div[role="button"][data-a],[data-sid][role="checkbox"]')){e.preventDefault();e.target.click()}
 });
 document.addEventListener("input",function(e){
+  if(sheet&&sheet.col==="adherents"&&/^fld-(prixM2|surface|prix|avance)$/.test(e.target.id)){adhPriceCalc(e.target.id);return}
   var id=e.target.id;
   if(id==="f-q")ui.q=e.target.value;else if(id==="f-dcat")ui.dcat=e.target.value;else return;
   refreshList();

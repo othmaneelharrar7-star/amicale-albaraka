@@ -185,6 +185,16 @@ async function fill(vals){for(const k in vals){const el=$('#form').elements[k];i
    fx=await xlOf();wx=X.read(Buffer.from(fx.b,'base64'));txt=JSON.stringify(X.utils.sheet_to_json(wx.Sheets[wx.SheetNames[0]],{header:1}));
    console.log('excel Tout:',fx.n,'| tout dedans',/TEST UN/.test(txt)&&/TEST DEUX/.test(txt)&&/TEST COM/.test(txt));
    if(!/à jour/.test(fx.n)||!/TEST DEUX/.test(txt)||!/TEST COM/.test(txt))errs.push('excel tout');}
+  // prix au m² → prix total et avance 40 % recalculés (v2.8)
+  {const id=Object.entries(w.__store.am_adherents).find(([k,v])=>v.nom==='TEST UN')[0];
+   click(d.querySelector('#view [data-a=detail][data-id="'+id+'"]'));await sleep(30);
+   click([...d.querySelectorAll('#detail [data-a=edit][data-col=adherents]')].find(b=>/fiche/.test(b.textContent)));await sleep(30);
+   const m2=$('#fld-prixM2');m2.value='10000';m2.dispatchEvent(new w.Event('input',{bubbles:true}));
+   console.log('calc: prix',$('#fld-prix').value,'avance',$('#fld-avance').value);
+   if($('#fld-prix').value!=='3000000'||$('#fld-avance').value!=='1200000')errs.push('calc avance');
+   submit('#form');await sleep(60);const v=w.__store.am_adherents[id];console.log('calc saved:',v.prix,v.avance,'src kept',!!v.src);
+   if(v.avance!==1200000)errs.push('calc save');
+   click(d.querySelector('[data-a=close-detail]'));await sleep(20);}
   console.log('errors:',errs);
   if(errs.length){console.error('ÉCHEC : erreurs JavaScript');process.exitCode=1}else console.log('OK : test réussi');
   process.exit(process.exitCode||0);
