@@ -61,6 +61,12 @@ Chaque écran a un bouton vert « Excel » : liste des adhérents (avec tous les
 chèques, factures et dépenses, travaux, documents. Le bouton vert en haut exporte tout le projet sélectionné.
 Le fichier est enregistré dans Téléchargements > Amicale Albaraka puis ouvert avec Excel ou Google Sheets.
 
+## Sauvegardes
+
+- **Chaque nuit**, GitHub fait une copie complète et chiffrée de la base (photos comprises) : *Actions > Sauvegarde automatique*, artefact `sauvegarde-AAAA-MM-JJ` (gardé 90 jours). La clé pour l'ouvrir est affichée dans l'application : *Tableau de bord > Sauvegarde*. Notez-la dans un endroit sûr.
+- **À la main** : *Tableau de bord > Sauvegarde > Télécharger une sauvegarde* (fichier .json à garder dans votre Drive).
+- **Restaurer** : *Tableau de bord > Sauvegarde > Restaurer depuis un fichier*. Seuls les éléments supprimés depuis la sauvegarde sont rétablis ; rien d'autre n'est modifié.
+
 ## Faire évoluer l'application avec Claude
 
 Tout le code source est dans ce dépôt (`dev/src.html` + `dev/build.py`), avec un guide pour Claude dans `CLAUDE.md`.

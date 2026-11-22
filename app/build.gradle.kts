@@ -11,8 +11,8 @@ android {
         applicationId = "ma.albaraka.amicale"
         minSdk = 24
         targetSdk = 34
-        versionCode = 21
-        versionName = "3.0"
+        versionCode = 22
+        versionName = "3.1"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
