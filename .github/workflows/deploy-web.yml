@@ -1,0 +1,51 @@
+name: Publier la version web
+
+# Met l'application en ligne sur GitHub Pages (même compte et mêmes données que l'APK) :
+# https://othmaneelharrar7-star.github.io/amicale-albaraka/
+# À activer une seule fois : Settings > Pages > Source : « GitHub Actions ».
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["mcp/**", ".github/workflows/deploy-mcp.yml", "LISEZMOI.md", "CLAUDE.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: dev/package-lock.json
+      - name: Construire la page de l'application depuis dev/src.html
+        run: python3 dev/build.py
+      - name: Tester l'application
+        working-directory: dev
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+      - name: Préparer le site
+        run: |
+          mkdir -p site
+          cp app/src/main/assets/* site/
+          touch site/.nojekyll
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4
