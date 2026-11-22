@@ -18,7 +18,7 @@ Application de gestion interne du bureau de l'Amicale Albaraka (Président, Secr
 | `dev/fb-entry.js` | Entrée du bundle Firebase. Après ajout d'un export : `npm run firebase-bundle`. |
 | `app/` | Coquille Android (WebView, `MainActivity.kt`, `app/build.gradle.kts` pour la version). Ne pas modifier `app/src/main/assets/index.html` à la main : il est régénéré. |
 | `.github/workflows/deploy-web.yml` | Version web sur GitHub Pages (même Firebase, mêmes comptes) : https://othmaneelharrar7-star.github.io/amicale-albaraka/ — publiée à chaque push sur `main`. |
-| `mcp/worker.js` | Connecteur MCP (lecture seule) sur Cloudflare Workers. Déployé par `.github/workflows/deploy-mcp.yml` à chaque push dans `mcp/`. |
+| `mcp/worker.js` | Connecteur MCP sur Cloudflare Workers : lecture + écriture (modifier_adherent, ajouter_adherent, ajouter_paiement, ajouter_cheque, joindre_fichier ; jamais de suppression). Écritures en PATCH avec `updateMask` (les autres champs, dont `src`, sont gardés). Déployé par `.github/workflows/deploy-mcp.yml` à chaque push dans `mcp/`. |
 | `firestore.rules` | Règles Firestore (accès aux comptes connectés). L'inscription publique est désactivée dans Firebase : les comptes sont créés à la main. |
 
 ## Faire une modification

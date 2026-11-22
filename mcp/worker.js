@@ -1,13 +1,13 @@
-// Connecteur MCP de l'Amicale Albaraka (lecture seule).
+// Connecteur MCP de l'Amicale Albaraka.
 // Serveur MCP « Streamable HTTP » sans dépendance, pour Cloudflare Workers.
-// Il lit la base Firestore de l'application avec un compte du bureau dédié
-// et ne fait que des lectures : aucune donnée n'est jamais modifiée.
+// Il lit la base Firestore de l'application avec un compte du bureau dédié, et peut
+// ajouter ou modifier des adhérents, paiements, chèques et pièces jointes (jamais de suppression).
 //
 // Secrets (Cloudflare) : MCP_TOKEN, FB_EMAIL, FB_PASSWORD
 // Variables (wrangler.toml) : FB_API_KEY, FB_PROJECT_ID
 
 const PRE = "am_";
-const SERVER = { name: "amicale-albaraka", title: "Amicale Albaraka", version: "1.0.0" };
+const SERVER = { name: "amicale-albaraka", title: "Amicale Albaraka", version: "1.1.0" };
 const VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 const CHQ_ST = { attente: "En attente", remis: "Remis à la banque", encaisse: "Encaissé", impaye: "Impayé" };
 
@@ -55,6 +55,143 @@ async function loadAll(env) {
   const res = await Promise.all(cols.map(c => listCol(env, tok, c)));
   const s = {}; cols.forEach((c, i) => s[c] = res[i]);
   return s;
+}
+
+/* ---------------- écriture (REST) ---------------- */
+const FS_BASE = env => "https://firestore.googleapis.com/v1/projects/" + env.FB_PROJECT_ID + "/databases/(default)/documents/";
+function fsEnc(v) {
+  if (v === null || v === undefined) return { nullValue: null };
+  if (typeof v === "boolean") return { booleanValue: v };
+  if (typeof v === "number") return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+  if (v instanceof Uint8Array) { let t = ""; for (let i = 0; i < v.length; i += 0x8000) t += String.fromCharCode.apply(null, v.subarray(i, i + 0x8000)); return { bytesValue: btoa(t) }; }
+  if (typeof v === "object" && v.__bytes) return { bytesValue: v.__bytes };
+  if (Array.isArray(v)) return { arrayValue: { values: v.map(fsEnc) } };
+  if (typeof v === "object") { const f = {}; for (const k in v) f[k] = fsEnc(v[k]); return { mapValue: { fields: f } }; }
+  return { stringValue: String(v) };
+}
+/* écrit seulement les champs donnés (les autres champs du document, dont « src », sont gardés) */
+async function fsSet(env, col, id, data) {
+  const tok = await idToken(env), keys = Object.keys(data);
+  const fields = {}; keys.forEach(k => fields[k] = fsEnc(data[k]));
+  const mask = keys.map(k => "updateMask.fieldPaths=" + encodeURIComponent(k)).join("&");
+  const r = await fetch(FS_BASE(env) + PRE + col + "/" + encodeURIComponent(id) + "?" + mask, { method: "PATCH", headers: { authorization: "Bearer " + tok, "content-type": "application/json" }, body: JSON.stringify({ fields }) });
+  if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error("Écriture dans « " + col + " » impossible (" + ((j.error && j.error.message) || r.status) + ")."); }
+}
+function newId() { const c = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", b = crypto.getRandomValues(new Uint8Array(20)); let t = ""; b.forEach(x => t += c[x % 62]); return t; }
+const nowIso = () => new Date().toISOString();
+function numArg(v, label) {
+  if (v === undefined || v === null || v === "") return undefined;
+  const x = typeof v === "number" ? v : parseFloat(String(v).replace(/[\s ]/g, "").replace(",", "."));
+  if (!isFinite(x) || x < 0) throw new Error("« " + label + " » doit être un nombre positif.");
+  return Math.round(x * 100) / 100;
+}
+function dateArg(v) {
+  if (!v) return today();
+  const t = String(v).trim(); let m = t.match(/^(\d{4})-(\d{2})-(\d{2})$/); if (m) return t;
+  m = t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/);
+  if (m) return (m[3].length === 2 ? "20" + m[3] : m[3]) + "-" + m[2].padStart(2, "0") + "-" + m[1].padStart(2, "0");
+  throw new Error("Date illisible : « " + t + " » (format JJ/MM/AAAA ou AAAA-MM-JJ).");
+}
+const lotKey = v => norm(v).replace(/[\s.\-_]/g, "");
+function findAdh(s, a) {
+  if (!a.lot && !a.nom) throw new Error("Indiquez le lot (ex. C15) ou le nom de l'adhérent.");
+  const p = findProj(s, a.projet); if (!p) throw new Error("Indiquez le projet.");
+  let l = s.adherents.filter(x => x.projet === p.id);
+  if (a.partie) { const t = norm(a.partie); l = l.filter(x => norm(x.section) === t || norm(x.section).includes(t)); }
+  if (a.lot) { const k = lotKey(a.lot); l = l.filter(x => lotKey(x.lot) === k); }
+  if (a.nom && (!a.lot || l.length > 1)) { const t = norm(a.nom); const l2 = l.filter(x => norm(x.nom).includes(t)); if (l2.length || !a.lot) l = l2; }
+  if (!l.length) throw new Error("Aucun lot « " + (a.lot || a.nom) + " » dans " + p.nom + (a.partie ? " · " + a.partie : "") + ". Utilisez ajouter_adherent pour un nouveau lot.");
+  if (l.length > 1) throw new Error("Plusieurs lots correspondent, précisez la partie : " + l.map(x => x.lot + " (" + (x.section || "sans partie") + ", " + (x.nom || "disponible") + ")").join(" ; "));
+  return { p, x: l[0] };
+}
+const ADH_FIELDS = { nom: "s", tel: "s", etage: "s", immeuble: "s", note: "s", banque: "s", refCheque: "s", surface: "n", prixM2: "n", prix: "n", avance: "n", dejaPaye: "n", tranches: "n" };
+function adhData(a, old) {
+  const d = {};
+  for (const k in ADH_FIELDS) { if (a[k] === undefined || a[k] === null) continue; d[k] = ADH_FIELDS[k] === "n" ? numArg(a[k], k) : String(a[k]).trim(); }
+  const sf = d.surface !== undefined ? d.surface : n(old && old.surface), m2 = d.prixM2 !== undefined ? d.prixM2 : n(old && old.prixM2);
+  if (d.prix === undefined && (d.surface !== undefined || d.prixM2 !== undefined) && sf > 0 && m2 > 0) d.prix = Math.round(sf * m2);
+  return d;
+}
+const adhLine = (s, x, d) => (d.nom !== undefined ? d.nom : x.nom || "Lot disponible") + " · lot " + x.lot + " · " + pName(s, x.projet) + (x.section ? " · " + x.section : "");
+function changes(old, d) { return Object.keys(d).map(k => "- " + k + " : " + (old[k] === undefined || old[k] === "" ? "—" : old[k]) + " → " + d[k]).join("\n"); }
+const FILE_COLS = { paiement: "paiements", adherent: "adherents", cheque: "cheques", facture: "factures", document: "documents", journal: "journal" };
+const MAX_FILE = 950 * 1024;
+async function hmac(env, txt) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode("upload:" + env.MCP_TOKEN), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(txt)));
+  return Array.from(sig, b => b.toString(16).padStart(2, "0")).join("");
+}
+async function storeFile(env, col, id, name, type, bytes) {
+  if (!/^(image\/(jpeg|png|webp)|application\/pdf)$/.test(type)) throw new Error("Format non accepté : " + type + " (JPG, PNG, WEBP ou PDF).");
+  if (!bytes.length) throw new Error("Fichier vide.");
+  if (bytes.length > MAX_FILE) throw new Error("Fichier trop lourd (" + Math.round(bytes.length / 1024) + " Ko) : 950 Ko maximum. Réduisez la photo.");
+  const fid = newId();
+  await fsSet(env, "fichiers", fid, { name, type, size: bytes.length, data: bytes, createdAt: nowIso() });
+  await fsSet(env, col, id, { fileId: fid, fileName: name, fileType: type });
+  return fid;
+}
+function b64ToBytes(b) { const t = atob(String(b).replace(/^data:[^,]*,/, "").replace(/\s/g, "")); const u = new Uint8Array(t.length); for (let i = 0; i < t.length; i++) u[i] = t.charCodeAt(i); return u; }
+
+const WRITE_FN = {
+  async modifier_adherent(s, a, env) {
+    const { x } = findAdh(s, a), d = adhData(a, x);
+    if (!Object.keys(d).length) throw new Error("Rien à modifier : donnez au moins un champ (nom, tel, surface, prixM2, prix, avance, note…).");
+    await fsSet(env, "adherents", x.id, d);
+    return "✅ Fiche modifiée : " + adhLine(s, x, d) + "\n" + changes(x, d);
+  },
+  async ajouter_adherent(s, a, env) {
+    const p = findProj(s, a.projet); if (!p) throw new Error("Indiquez le projet.");
+    if (!a.lot) throw new Error("Indiquez le lot ou l'appartement.");
+    const secs = String(p.sections || "").split(",").map(x => x.trim()).filter(Boolean);
+    let sec = "";
+    if (a.partie) { sec = secs.find(x => norm(x) === norm(a.partie)) || secs.find(x => norm(x).includes(norm(a.partie))) || ""; if (!sec) throw new Error("Partie inconnue : « " + a.partie + " ». Parties de " + p.nom + " : " + secs.join(", ")); }
+    else if (secs.length) throw new Error("Précisez la partie : " + secs.join(", "));
+    const same = s.adherents.find(x => x.projet === p.id && (x.section || "") === sec && lotKey(x.lot) === lotKey(a.lot));
+    if (same && !isFree(same)) throw new Error("Le lot " + same.lot + " est déjà attribué à " + same.nom + ". Utilisez modifier_adherent.");
+    const d = adhData(a, same || {});
+    if (!(d.prix || (same && same.prix))) throw new Error("Indiquez le prix total, ou le prix au m² et la surface.");
+    if (same) { await fsSet(env, "adherents", same.id, d); return "✅ Lot disponible attribué : " + adhLine(s, same, d) + "\n" + changes(same, d); }
+    const id = newId(), full = Object.assign({ projet: p.id, section: sec, lot: String(a.lot).trim(), nom: "", tel: "", etage: "", immeuble: "", surface: 0, prixM2: 0, prix: 0, avance: 0, dejaPaye: 0, tranches: 0, refCheque: "", banque: "", note: "" }, d, { createdAt: nowIso() });
+    await fsSet(env, "adherents", id, full);
+    return "✅ Adhérent ajouté : " + adhLine(s, full, d) + " · prix " + dh(full.prix) + " (id " + id + ")";
+  },
+  async ajouter_paiement(s, a, env) {
+    const { p, x } = findAdh(s, a);
+    if (isFree(x)) throw new Error("Le lot " + x.lot + " est disponible (sans adhérent) : ajoutez d'abord le nom avec modifier_adherent.");
+    const montant = numArg(a.montant, "montant"); if (!montant) throw new Error("Indiquez le montant.");
+    const mode = a.mode ? (["Chèque", "Virement", "Espèces"].find(m => norm(m) === norm(a.mode)) || String(a.mode)) : (a.reference ? "Chèque" : "");
+    const d = { adherentId: x.id, projet: p.id, date: dateArg(a.date), montant, tranche: numArg(a.tranche, "tranche") || 0, mode, reference: String(a.reference || ""), banque: String(a.banque || ""), note: String(a.note || ""), createdAt: nowIso() };
+    const id = newId(); await fsSet(env, "paiements", id, d);
+    const paid = paidOf(s, x) + montant;
+    return "✅ Paiement enregistré (id " + id + ") : " + dh(montant) + " le " + fdate(d.date) + " · " + [mode, d.reference && "N° " + d.reference, d.banque].filter(Boolean).join(" · ") + "\nAdhérent : " + adhLine(s, x, {}) + "\nTotal payé : " + dh(paid) + " / " + dh(x.prix) + " · reste " + dh(Math.max(0, n(x.prix) - paid))
+      + (n(x.avance) ? " · avance exigée " + dh(x.avance) + (paid >= n(x.avance) ? " (atteinte)" : " (manque " + dh(n(x.avance) - paid) + ")") : "")
+      + "\nPour joindre la photo du chèque : joindre_fichier avec cible « paiement » et id « " + id + " ».";
+  },
+  async ajouter_cheque(s, a, env) {
+    const p = findProj(s, a.projet); if (!p) throw new Error("Indiquez le projet.");
+    const montant = numArg(a.montant, "montant"); if (!montant || !a.numero) throw new Error("Indiquez le numéro et le montant du chèque.");
+    const d = { projet: p.id, sens: a.sens === "emis" ? "emis" : "recu", numero: String(a.numero), montant, banque: String(a.banque || ""), date: a.date ? dateArg(a.date) : "", tiers: String(a.tiers || ""), statut: ["attente", "remis", "encaisse", "impaye"].includes(a.statut) ? a.statut : "attente", section: String(a.partie || ""), note: String(a.note || ""), createdAt: nowIso() };
+    const id = newId(); await fsSet(env, "cheques", id, d);
+    return "✅ Chèque enregistré (id " + id + ") : N° " + d.numero + " · " + dh(montant) + " · " + (d.sens === "emis" ? "émis" : "reçu") + " · " + CHQ_ST[d.statut];
+  },
+  async joindre_fichier(s, a, env, origin) {
+    const col = FILE_COLS[a.cible]; if (!col) throw new Error("cible : " + Object.keys(FILE_COLS).join(", "));
+    const item = (s[col] || []).find(x => x.id === a.id); if (!item) throw new Error("Aucun élément « " + a.id + " » dans " + col + ".");
+    const type = String(a.type || "image/jpeg"), name = String(a.nom_fichier || ("piece-" + today() + (type === "application/pdf" ? ".pdf" : ".jpg"))).replace(/[\/\\]/g, "-");
+    if (a.base64) { const fid = await storeFile(env, col, item.id, name, type, b64ToBytes(a.base64)); return "✅ Fichier « " + name + " » joint (" + fid + ")."; }
+    const exp = Date.now() + 30 * 60000, path = col + "/" + item.id + "/" + exp;
+    const sig = await hmac(env, path + "/" + name + "/" + type);
+    return "Adresse d'envoi (valable 30 min, un seul fichier ≤ 950 Ko) :\n" + origin + "/up/" + path + "/" + sig + "?name=" + encodeURIComponent(name) + "&type=" + encodeURIComponent(type)
+      + "\nEnvoyez le fichier brut en POST, par ex. : curl -X POST --data-binary @photo.jpg \"<adresse>\"";
+  }
+};
+async function upload(req, env, parts, url) {
+  const [, col, id, exp, sig] = parts, name = url.searchParams.get("name") || "piece.jpg", type = url.searchParams.get("type") || "image/jpeg";
+  if (req.method !== "POST" || parts.length !== 5 || !Object.values(FILE_COLS).includes(col) || !/^\d+$/.test(exp || "")) return new Response("Not found", { status: 404 });
+  if (Number(exp) < Date.now()) return json({ error: "Adresse expirée : redemandez joindre_fichier." }, 410);
+  if (!safeEq(sig, await hmac(env, col + "/" + id + "/" + exp + "/" + name + "/" + type))) return new Response("Not found", { status: 404 });
+  try { const fid = await storeFile(env, col, id, name, type, new Uint8Array(await req.arrayBuffer())); return json({ ok: true, fileId: fid, message: "Fichier « " + name + " » joint." }); }
+  catch (e) { return json({ ok: false, error: String(e && e.message || e) }, 400); }
 }
 
 /* ---------------- calculs (mêmes règles que l'application) ---------------- */
@@ -124,6 +261,26 @@ const TOOLS = [
     description: "Documents juridiques et administratifs d'un projet ou de l'association, avec catégorie, date et date d'expiration.",
     inputSchema: { type: "object", properties: { projet: { type: "string", description: "Nom du projet, ou « association » pour les documents de l'association. Tous si absent." } } } }
 ].map(t => Object.assign(t, { annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }));
+const P_ADH = { projet: { type: "string", description: "Nom du projet (ex. Val d'Or)" }, partie: { type: "string", description: "Partie du projet si besoin (Appartements, Résidence 1, Résidence 2, Commerce…)" }, lot: { type: "string", description: "Appartement ou lot (ex. C15, R1-6)" } };
+const P_FIELDS = { nom: { type: "string", description: "Nom et prénom" }, tel: { type: "string" }, surface: { type: "number", description: "m²" }, prixM2: { type: "number", description: "Prix au m² (DH). Le prix total est recalculé avec la surface si « prix » n'est pas donné." }, prix: { type: "number", description: "Prix total (DH)" }, avance: { type: "number", description: "Avance exigée (DH)" }, etage: { type: "string" }, immeuble: { type: "string" }, note: { type: "string" } };
+const WRITE_TOOLS = [
+  { name: "modifier_adherent", title: "Modifier la fiche d'un adhérent",
+    description: "Modifie la fiche d'un lot existant (nom, téléphone, surface, prix au m², prix, avance exigée, note…). Seuls les champs donnés changent. Ne pas utiliser pour un paiement : utiliser ajouter_paiement.",
+    inputSchema: { type: "object", properties: Object.assign({}, P_ADH, P_FIELDS), required: ["projet", "lot"] }, annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false } },
+  { name: "ajouter_adherent", title: "Ajouter un adhérent ou un lot",
+    description: "Ajoute un nouveau lot avec son adhérent (ou attribue un lot disponible).",
+    inputSchema: { type: "object", properties: Object.assign({}, P_ADH, P_FIELDS), required: ["projet", "lot"] }, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
+  { name: "ajouter_paiement", title: "Enregistrer un paiement",
+    description: "Enregistre un paiement (avance, tranche) pour l'adhérent d'un lot. Renvoie l'id du paiement, à utiliser avec joindre_fichier pour la photo du chèque.",
+    inputSchema: { type: "object", properties: Object.assign({}, P_ADH, { montant: { type: "number", description: "Montant en DH" }, date: { type: "string", description: "JJ/MM/AAAA ou AAAA-MM-JJ (aujourd'hui si absent)" }, mode: { type: "string", enum: ["Chèque", "Virement", "Espèces"] }, reference: { type: "string", description: "N° du chèque ou référence du virement" }, banque: { type: "string" }, tranche: { type: "number", description: "Numéro de tranche (laisser vide : calculé)" }, note: { type: "string" } }), required: ["projet", "lot", "montant"] }, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
+  { name: "ajouter_cheque", title: "Enregistrer un chèque",
+    description: "Ajoute un chèque au suivi des chèques (reçu d'un adhérent ou émis à un fournisseur).",
+    inputSchema: { type: "object", properties: { projet: { type: "string" }, sens: { type: "string", enum: ["recu", "emis"] }, numero: { type: "string" }, montant: { type: "number" }, banque: { type: "string" }, date: { type: "string", description: "Échéance JJ/MM/AAAA" }, tiers: { type: "string", description: "Adhérent ou fournisseur" }, statut: { type: "string", enum: ["attente", "remis", "encaisse", "impaye"] }, partie: { type: "string" }, note: { type: "string" } }, required: ["projet", "numero", "montant"] }, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } },
+  { name: "joindre_fichier", title: "Joindre une photo ou un PDF",
+    description: "Joint une photo (chèque, reçu, facture) ou un PDF ≤ 950 Ko à un paiement, une fiche, un chèque, une facture, un document ou une entrée du journal. Avec « base64 » le fichier est joint tout de suite ; sans, renvoie une adresse d'envoi (POST du fichier brut, 30 min).",
+    inputSchema: { type: "object", properties: { cible: { type: "string", enum: Object.keys(FILE_COLS) }, id: { type: "string", description: "Id renvoyé par ajouter_paiement / ajouter_cheque, ou id de l'élément" }, nom_fichier: { type: "string" }, type: { type: "string", enum: ["image/jpeg", "image/png", "image/webp", "application/pdf"] }, base64: { type: "string", description: "Contenu du fichier en base64 (optionnel)" } }, required: ["cible", "id"] }, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } }
+];
+TOOLS.push(...WRITE_TOOLS);
 
 function alerts(s) {
   const out = [];
@@ -221,8 +378,8 @@ const TOOL_FN = {
 };
 
 /* ---------------- protocole MCP ---------------- */
-const INSTRUCTIONS = "Données de gestion de l'Amicale Albaraka (amicale immobilière au Maroc) : projets, adhérents, paiements, chèques, factures, travaux et documents. Lecture seule. Le montant payé d'un adhérent = « déjà payé » de sa fiche + paiements saisis. Un lot sans nom est DISPONIBLE. Montants en dirhams (DH).";
-async function rpc(msg, env) {
+const INSTRUCTIONS = "Données de gestion de l'Amicale Albaraka (amicale immobilière au Maroc) : projets, adhérents, paiements, chèques, factures, travaux et documents. Lecture, et ajout ou modification d'adhérents, paiements, chèques et pièces jointes (aucune suppression) : avant d'écrire, vérifiez le lot avec fiche_adherent et annoncez à l'utilisateur ce qui sera enregistré. Le montant payé d'un adhérent = « déjà payé » de sa fiche + paiements saisis. Un lot sans nom est DISPONIBLE. Montants en dirhams (DH).";
+async function rpc(msg, env, origin) {
   const { id, method, params } = msg || {};
   const ok = result => ({ jsonrpc: "2.0", id, result });
   const err = (code, message) => ({ jsonrpc: "2.0", id: id === undefined ? null : id, error: { code, message } });
@@ -237,9 +394,9 @@ async function rpc(msg, env) {
   if (method === "resources/list") return ok({ resources: [] });
   if (method === "prompts/list") return ok({ prompts: [] });
   if (method === "tools/call") {
-    const name = params && params.name, fn = TOOL_FN[name];
+    const name = params && params.name, fn = TOOL_FN[name] || WRITE_FN[name];
     if (!fn) return err(-32602, "Outil inconnu : " + name);
-    try { const s = await loadAll(env); return ok({ content: [{ type: "text", text: fn(s, (params && params.arguments) || {}) }] }); }
+    try { const s = await loadAll(env); return ok({ content: [{ type: "text", text: await fn(s, (params && params.arguments) || {}, env, origin) }] }); }
     catch (e) { return ok({ content: [{ type: "text", text: "Erreur : " + (e && e.message || e) }], isError: true }); }
   }
   return err(-32601, "Méthode inconnue : " + method);
@@ -251,16 +408,17 @@ export default {
   async fetch(req, env) {
     const url = new URL(req.url), parts = url.pathname.split("/").filter(Boolean);
     if (!parts.length) return new Response("Connecteur MCP Amicale Albaraka. Adresse : /mcp/<jeton>", { headers: { "content-type": "text/plain; charset=utf-8" } });
+    if (parts[0] === "up") return upload(req, env, parts, url);
     // adresse : /mcp/<MCP_TOKEN>
     if (parts[0] !== "mcp" || !env.MCP_TOKEN || String(env.MCP_TOKEN).length < 24 || !safeEq(parts[1], env.MCP_TOKEN) || parts.length > 2) return new Response("Not found", { status: 404 });
     if (req.method === "GET" || req.method === "DELETE") return new Response(null, { status: 405, headers: { allow: "POST" } });
     if (req.method !== "POST") return new Response(null, { status: 405, headers: { allow: "POST" } });
     let body; try { body = await req.json(); } catch (e) { return json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }, 400); }
     if (Array.isArray(body)) {
-      const out = (await Promise.all(body.map(m => rpc(m, env)))).filter(Boolean);
+      const out = (await Promise.all(body.map(m => rpc(m, env, url.origin)))).filter(Boolean);
       return out.length ? json(out) : new Response(null, { status: 202 });
     }
-    const r = await rpc(body, env);
+    const r = await rpc(body, env, url.origin);
     return r ? json(r) : new Response(null, { status: 202 });
   }
 };
