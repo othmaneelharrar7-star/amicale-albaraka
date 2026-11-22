@@ -23,6 +23,8 @@ const fs = require("fs");
   ws.addTable({ name: "ListeTest", ref: "A1", headerRow: true, style: { theme: "TableStyleMedium2", showRowStripes: true },
     columns: head.map(h => ({ name: h })), rows });
   rows.forEach((r, j) => { const rr = j + 2; ws.getCell("J" + rr).value = { formula: "G" + rr + "-I" + rr }; });
+  // détail des versements écrit comme une somme (comme dans les vrais fichiers)
+  ws.getCell("I2").value = { formula: "100000+150000", result: 250000 };
   const out = path.join(__dirname, "out");
   fs.mkdirSync(out, { recursive: true });
   await wb.xlsx.writeFile(path.join(out, "exemple.xlsx"));

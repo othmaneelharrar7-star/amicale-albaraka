@@ -37,7 +37,7 @@ Application de gestion interne du bureau de l'Amicale Albaraka (Président, Secr
 - `adherents` : `projet`, `section`, `lot`, `etage`, `immeuble`, `nom` (vide = lot DISPONIBLE), `tel`, `surface`, `prixM2`, `prix`, `avance`, `dejaPaye`, `tranches`, `refCheque`, `banque`, `note`, `src` (lien vers la ligne du fichier Excel d'origine : ne jamais le perdre).
 - `paiements` : `adherentId`, `projet`, `date`, `montant`, `tranche`, `mode`, `reference`, `banque`, `note`.
 - `cheques`, `factures` (`valP`/`valT` = validations), `phases`, `journal`, `documents`, `fichiers` (pièces jointes en Bytes ≤ 950 Ko), `meta` (`config` : jeton App Check ; `mcp` : adresse du connecteur).
-- Montant payé = `dejaPaye` + somme des paiements. Projets « Casino » = bungalows (pas d'étage ni d'immeuble) ; étage/immeuble seulement pour Sid El Abed et la partie Appartements de Val d'Or (`showEtage`).
+- Montant payé = `dejaPaye` + somme des paiements. `dejaPayeParts` = détail des versements lu dans le fichier Excel (case « Montant payé » écrite comme `=900000+400000`), valable seulement si la somme = `dejaPaye` (`partsValid`). Les données déjà importées sont complétées automatiquement depuis le fichier d'origine gardé (`excelPartsFromModels`). « Ajouter le chèque » transforme tous ces versements en vrais paiements (tranche 1…n), `dejaPaye` passe à 0. Projets « Casino » = bungalows (pas d'étage ni d'immeuble) ; étage/immeuble seulement pour Sid El Abed et la partie Appartements de Val d'Or (`showEtage`).
 
 ## Sauvegarde et restauration
 

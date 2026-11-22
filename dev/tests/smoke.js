@@ -73,6 +73,7 @@ async function fill(vals){for(const k in vals){const el=$('#form').elements[k];i
   const t0=Date.now();click($('#imp-go'));for(let i=0;i<200&&!$('#detail').hidden;i++)await sleep(50);
   console.log('import done in',Date.now()-t0,'ms; notice:',$('#notice').textContent);
   console.log('docs:',Object.keys(w.__store.am_adherents||{}).length);
+  {const k=Object.values(w.__store.am_adherents||{}).find(d=>/KARIM/.test(d.nom||''));console.log('versements Excel:',k&&JSON.stringify(k.dejaPayeParts),k&&k.dejaPaye);if(!k||!k.dejaPayeParts||k.dejaPayeParts.join('+')!=='100000+150000')errs.push('versements Excel');}
   console.log('hero+list:',$('#view').textContent.replace(/\s+/g,' ').slice(0,700));
   console.log('groups:',[...d.querySelectorAll('.grp')].map(g=>g.textContent).join(' | '));
   // re-import: no duplicates
