@@ -200,6 +200,20 @@ async function fill(vals){for(const k in vals){const el=$('#form').elements[k];i
    submit('#form');await sleep(60);const v=w.__store.am_adherents[id];console.log('calc saved:',v.prix,v.avance,'src kept',!!v.src);
    if(v.avance!==1200000)errs.push('calc save');
    click(d.querySelector('[data-a=close-detail]'));await sleep(20);}
+  // v3.0 : identifiants mémorisés, nouveaux corps de métier, espace Factures
+  {const c=JSON.parse(w.localStorage.getItem('amicale-albaraka-cred')||'null');console.log('cred mémorisé:',c&&c.e,'| case:',!!$('#lg-mem'));
+   if(!c||c.e!=='a@b.ma'||!c.p)errs.push('cred');
+   w.location.hash='#depenses';await sleep(50);
+   click(d.querySelector('#view [data-a=new][data-col=factures]'));await sleep(20);
+   const po=[...$('#form').elements.poste.options].map(o=>o.value);console.log('postes:',po.filter(x=>/Alu|Carre|marbre|Plaq|Clim/.test(x)).join(' | '));
+   if(!['Aluminium','Carrelage (pose)','Fourniture carrelage','Pierre et marbre','Climatisation'].every(x=>po.includes(x)))errs.push('postes');
+   $('#form').elements.fournisseur.value='ALU TEST';$('#form').elements.montant.value='50000';$('#form').elements.poste.value='Aluminium';submit('#form');await sleep(60);
+   click(d.querySelector('#view [data-a=dep-poste][data-id="Aluminium"]'));await sleep(30);
+   console.log('factures alu:',$('#list').textContent.replace(/\s+/g,' ').slice(0,90),'| seg:',d.querySelector('#view [data-a=dep][aria-pressed=true]').textContent);
+   if(!/ALU TEST/.test($('#list').textContent)||$('#f-fposte').value!=='Aluminium')errs.push('factures espace');
+   const fs=$('#f-fposte');fs.value='';fs.dispatchEvent(new w.Event('input',{bubbles:true}));await sleep(10);
+   const st=$('#f-fst');st.value='Payée';st.dispatchEvent(new w.Event('input',{bubbles:true}));await sleep(10);
+   console.log('filtre payée:',$('#list').textContent.slice(0,50));if(/ALU TEST/.test($('#list').textContent))errs.push('filtre statut');}
   console.log('errors:',errs);
   if(errs.length){console.error('ÉCHEC : erreurs JavaScript');process.exitCode=1}else console.log('OK : test réussi');
   process.exit(process.exitCode||0);

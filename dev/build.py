@@ -25,6 +25,7 @@ cut('<div class="gate" id="gate" hidden>','<header>','''<div id="boot" class="ga
     <h1>Gestion du bureau</h1>
     <label for="lg-email">Email<input id="lg-email" type="email" autocomplete="username" inputmode="email" placeholder="nom@gmail.com"></label>
     <label for="lg-pw">Mot de passe<input id="lg-pw" type="password" autocomplete="current-password"></label>
+    <label class="check" for="lg-mem"><input id="lg-mem" type="checkbox" checked>Mémoriser l'email et le mot de passe sur cet appareil</label>
     <p class="err" id="lg-err" role="alert" style="margin:0"></p>
     <button type="submit" class="btn" id="lg-btn">Se connecter</button>
     <button type="button" class="linkbtn" id="lg-reset">Mot de passe oublié ?</button>
@@ -145,13 +146,18 @@ cut('''$("#imp").addEventListener''','''function route(){''','''function authMsg
   if(c==="auth/invalid-credential"||c==="auth/wrong-password"||c==="auth/user-not-found"||c==="auth/invalid-email"||c==="auth/missing-password")return "Email ou mot de passe incorrect.";
   return "Connexion impossible. Réessayez.";
 }
+/* identifiants mémorisés sur l'appareil (case « Mémoriser ») pour se reconnecter sans les retaper */
+var CRED_KEY="amicale-albaraka-cred";
+function credSave(email,pw){try{if($("#lg-mem").checked)localStorage.setItem(CRED_KEY,JSON.stringify({e:email,p:btoa(unescape(encodeURIComponent(pw)))}));else localStorage.removeItem(CRED_KEY)}catch(e){}}
+function credFill(){try{var c=JSON.parse(localStorage.getItem(CRED_KEY)||"null");if(c&&c.e){$("#lg-email").value=c.e;$("#lg-pw").value=decodeURIComponent(escape(atob(c.p||"")));$("#lg-mem").checked=true}}catch(e){}}
+credFill();
 $("#login-form").addEventListener("submit",async function(e){
   e.preventDefault();
   var err=$("#lg-err"),btn=$("#lg-btn"),email=$("#lg-email").value.trim(),pw=$("#lg-pw").value;
   err.textContent="";
   if(!email||!pw){err.textContent="Saisissez votre email et votre mot de passe.";return}
   btn.disabled=true;btn.textContent="Connexion…";
-  try{await signInWithEmailAndPassword(auth,email,pw);$("#lg-pw").value=""}
+  try{await signInWithEmailAndPassword(auth,email,pw);credSave(email,pw);$("#lg-pw").value=""}
   catch(ex){err.textContent=authMsg(ex)}
   btn.disabled=false;btn.textContent="Se connecter";
 });
@@ -163,7 +169,7 @@ $("#lg-reset").addEventListener("click",async function(){
 });
 $("#logout").addEventListener("click",function(){signOut(auth).catch(function(){})});
 function showOnly(w){
-  $("#boot").hidden=w!=="boot";$("#login").hidden=w!=="login";
+  $("#boot").hidden=w!=="boot";$("#login").hidden=w!=="login";if(w==="login")credFill();
   document.body.classList.toggle("locked",w!=="app");$("#backup").hidden=w!=="app";
 }
 ''')
@@ -186,7 +192,7 @@ function start(){
   var app=initializeApp(firebaseConfig);
   auth=getAuth(app);fdb=getFirestore(app);assets=fsAssets;
   ACCOUNT={email:function(){return auth.currentUser&&auth.currentUser.email||""},
-    changePassword:async function(cur,nw){var u=auth.currentUser;if(!u)throw {code:"auth/no-user"};await reauthenticateWithCredential(u,EmailAuthProvider.credential(u.email,cur));await updatePassword(u,nw)},
+    changePassword:async function(cur,nw){var u=auth.currentUser;if(!u)throw {code:"auth/no-user"};await reauthenticateWithCredential(u,EmailAuthProvider.credential(u.email,cur));await updatePassword(u,nw);try{if(localStorage.getItem(CRED_KEY))localStorage.setItem(CRED_KEY,JSON.stringify({e:u.email,p:btoa(unescape(encodeURIComponent(nw)))}))}catch(e){}},
     logout:function(){signOut(auth).catch(function(){})},
     getMcp:async function(){var sn=await getDoc(doc(fdb,PRE+"meta","mcp"));return sn.exists()?sn.data():null}};
   var acDone=false,acKey="";

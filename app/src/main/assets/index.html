@@ -339,6 +339,7 @@ header{background:rgba(245,249,255,.62);-webkit-backdrop-filter:blur(22px) satur
     <h1>Gestion du bureau</h1>
     <label for="lg-email">Email<input id="lg-email" type="email" autocomplete="username" inputmode="email" placeholder="nom@gmail.com"></label>
     <label for="lg-pw">Mot de passe<input id="lg-pw" type="password" autocomplete="current-password"></label>
+    <label class="check" for="lg-mem"><input id="lg-mem" type="checkbox" checked>Mémoriser l'email et le mot de passe sur cet appareil</label>
     <p class="err" id="lg-err" role="alert" style="margin:0"></p>
     <button type="submit" class="btn" id="lg-btn">Se connecter</button>
     <button type="button" class="linkbtn" id="lg-reset">Mot de passe oublié ?</button>
@@ -427,8 +428,8 @@ const firebaseConfig=CFG.firebaseConfig;
 var COLS=["projets","adherents","paiements","cheques","factures","phases","journal","documents"];
 var VIEWS={adherents:"Adhérents",cheques:"Chèques",depenses:"Dépenses",travaux:"Travaux",documents:"Documents"};
 var MODES=["Chèque","Virement","Espèces"];
-var POSTES=["Terrain","Études et honoraires","Gros œuvre","Second œuvre","Électricité","Plomberie","Menuiserie","Peinture et finitions","VRD et piscine","Frais administratifs","Divers"];
-var POSTES_TRAVAUX=["Gros œuvre","Second œuvre","Électricité","Plomberie","Menuiserie","Peinture et finitions","VRD et piscine"];
+var POSTES=["Terrain","Études et honoraires","Gros œuvre","Second œuvre","Électricité","Plomberie","Menuiserie","Peinture et finitions","Aluminium","Carrelage (pose)","Fourniture carrelage","Pierre et marbre","Plaquiste (plâtre, faux plafond)","Climatisation","VRD et piscine","Frais administratifs","Divers"];
+var POSTES_TRAVAUX=["Gros œuvre","Second œuvre","Électricité","Plomberie","Menuiserie","Peinture et finitions","Aluminium","Carrelage (pose)","Fourniture carrelage","Pierre et marbre","Plaquiste (plâtre, faux plafond)","Climatisation","VRD et piscine"];
 var POSTE_COLORS=["#7FB0F5","#9BD86A","#F3C9A5","#FFFFFF"];
 var CHQ_ST=[["attente","En attente"],["remis","Remis à la banque"],["encaisse","Encaissé"],["impaye","Impayé"]];
 var CHQ_PILL={attente:"info",remis:"",encaisse:"ok",impaye:"late"};
@@ -484,7 +485,7 @@ var SCH={
     {k:"date",l:"Date",t:"date"},
     {k:"montant",l:"Montant TTC (DH)",t:"number",req:1},
     {k:"paye",l:"Déjà payé (DH)",t:"number"},
-    {k:"poste",l:"Poste de dépense",t:"select",o:POSTES},
+    {k:"poste",l:"Corps de métier / poste",t:"select",o:POSTES},
     SEC,
     {k:"valP",l:"Validée par le Président",t:"check",full:1},
     {k:"valT",l:"Validée par le Trésorier",t:"check",full:1},
@@ -508,7 +509,7 @@ var SCH={
 var FILE_TYPES={"application/pdf":1,"image/png":1,"image/jpeg":1,"image/gif":1,"image/webp":1};
 var state={},loaded={};
 COLS.forEach(function(c){state[c]=[];loaded[c]=false});
-var ui={view:"adherents",projet:"",section:"",chq:"recu",scope:"projet",q:"",dcat:"",sel:null};
+var ui={view:"adherents",projet:"",section:"",chq:"recu",scope:"projet",q:"",dcat:"",sel:null,dep:"resume",fposte:"",fst:""};
 var db=null,assets=null,downloads=null,local=false,sheet=null,detailId=null;
 var XLSX_SRC="./xlsx.min.js";
 var EXCELJS_SRC="./exceljs.min.js";
@@ -780,22 +781,47 @@ function facStatus(f){
   if(p>0)return {c:"info",t:"Partielle"};
   return {c:"",t:"À payer"};
 }
+function depSeg(n2){return '<div class="seg" role="group" aria-label="Affichage des dépenses"><button type="button" data-a="dep" data-id="resume" aria-pressed="'+(ui.dep!=="factures")+'">Résumé</button><button type="button" data-a="dep" data-id="factures" aria-pressed="'+(ui.dep==="factures")+'">Factures ('+n2+')</button></div>'}
+var XL_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>';
 function depHTML(){
   var all=state.factures.filter(inScope).sort(byDateDesc);
-  var tot=sum(all),paid=sum(all,"paye"),by={};
-  all.forEach(function(f){var k=f.poste||"Divers";by[k]=(by[k]||0)+n(f.montant)});
+  var h=depSeg(all.length);
+  if(ui.dep==="factures")return h+facHTML(all);
+  var tot=sum(all),paid=sum(all,"paye"),by={},byP={},byN={};
+  all.forEach(function(f){var k=f.poste||"Divers";by[k]=(by[k]||0)+n(f.montant);byP[k]=(byP[k]||0)+n(f.paye);byN[k]=(byN[k]||0)+1});
   var keys=Object.keys(by).sort(function(a,b){return by[b]-by[a]}),top=keys.slice(0,3).map(function(k){return [k,by[k]]});
   var other=keys.slice(3).reduce(function(t,k){return t+by[k]},0);
   if(other>0)top.push(["Autres",other]);
-  var h='<div class="hero" style="display:flex;flex-direction:column;gap:12px"><div class="line" style="align-items:baseline"><span class="lbl">Dépenses engagées</span><span class="big num" style="font-size:24px">'+short(tot)+'</span></div>';
+  h+='<div class="hero" style="display:flex;flex-direction:column;gap:12px"><div class="line" style="align-items:baseline"><span class="lbl">Dépenses engagées</span><span class="big num" style="font-size:24px">'+short(tot)+'</span></div>';
   if(tot>0){
-    h+='<div class="stackbar" role="img" aria-label="Répartition des dépenses par poste">'+top.map(function(t,i){return '<span style="width:'+(t[1]/tot*100).toFixed(1)+'%;background:'+POSTE_COLORS[i]+'"></span>'}).join("")+'</div>';
+    h+='<div class="stackbar" role="img" aria-label="Répartition des dépenses par corps de métier">'+top.map(function(t,i){return '<span style="width:'+(t[1]/tot*100).toFixed(1)+'%;background:'+POSTE_COLORS[i]+'"></span>'}).join("")+'</div>';
     h+='<div class="legend num">'+top.map(function(t,i){return '<span><i style="background:'+POSTE_COLORS[i]+'"></i>'+esc(t[0])+' <b>'+short(t[1])+'</b></span>'}).join("")+'</div>';
   }
   h+='<div class="line" style="font-size:12px"><span>Payé : <b class="num">'+short(paid)+'</b></span><span>Reste à payer : <b class="num">'+short(Math.max(0,tot-paid))+'</b></span></div></div>';
-  h+='<div class="head"><h2>Factures ('+all.length+')</h2><span class="hbtns"><button type="button" class="btn xl" data-a="xl" data-id="depenses" aria-label="Télécharger les factures et dépenses en Excel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Excel</button>'+(all.length?selBtn():'')+'<button type="button" class="btn" data-a="new" data-col="factures">+ Facture</button></span></div>';
+  var wait=all.filter(function(f){return !(f.valP&&f.valT)}).length;
+  h+='<div class="head"><h2>Par corps de métier</h2><span class="hbtns"><button type="button" class="btn xl" data-a="xl" data-id="depenses" aria-label="Télécharger les factures et dépenses en Excel">'+XL_SVG+'Excel</button><button type="button" class="btn" data-a="new" data-col="factures">+ Facture</button></span></div>';
   if(!all.length)return h+emptyBox("Aucune facture ni dépense enregistrée pour ce projet.","factures","+ Ajouter une facture");
-  all.forEach(function(f){
+  if(wait)h+='<button type="button" class="notice" style="width:100%;text-align:left;border:0" data-a="dep-st" data-id="À valider">'+wait+' facture'+(wait>1?"s":"")+' à valider par le Président et le Trésorier →</button>';
+  h+='<div class="stack">';
+  keys.forEach(function(k){var r=Math.max(0,by[k]-byP[k]);
+    h+='<button type="button" class="card" data-a="dep-poste" data-id="'+esc(k)+'" aria-label="Voir les factures '+esc(k)+'"><div class="line"><span class="t">'+esc(k)+'</span><span class="s">'+byN[k]+' facture'+(byN[k]>1?"s":"")+'</span></div><div class="line num" style="margin-top:4px;align-items:baseline"><span class="amt" style="font-size:16px">'+dh(by[k])+'</span><span class="s">'+(r?"Reste "+dh(r):"Tout payé")+'</span></div></button>';
+  });
+  return h+'</div>';
+}
+var FAC_ST=["À valider","À payer","Partielle","Payée"];
+function facHTML(all){
+  var h='<div class="head"><h2>Factures du projet</h2><span class="hbtns"><button type="button" class="btn xl" data-a="xl" data-id="depenses" aria-label="Télécharger les factures en Excel">'+XL_SVG+'Excel</button>'+(all.length?selBtn():'')+'<button type="button" class="btn" data-a="new" data-col="factures">+ Facture</button></span></div>';
+  if(!all.length)return h+emptyBox("Aucune facture enregistrée pour ce projet.","factures","+ Ajouter une facture");
+  var used=POSTES.filter(function(p2){return all.some(function(f){return (f.poste||"Divers")===p2})});
+  h+='<div class="head"><select class="search" id="f-fposte" aria-label="Corps de métier">'+opts(used,ui.fposte,"Tous les corps de métier")+'</select><select class="search" id="f-fst" aria-label="Statut">'+opts(FAC_ST,ui.fst,"Tous les statuts")+'</select></div>';
+  h+='<input type="search" class="search" id="f-q" placeholder="Rechercher un fournisseur ou un n°" aria-label="Rechercher une facture" value="'+esc(ui.q)+'">';
+  return h+'<div class="stack" id="list">'+facRows(all,ui.q.toLowerCase())+'</div>';
+}
+function facRows(all,q){
+  var a=all.filter(function(f){return (!ui.fposte||(f.poste||"Divers")===ui.fposte)&&(!ui.fst||facStatus(f).t===ui.fst)&&(!q||[f.fournisseur,f.numero,f.note,f.poste].join(" ").toLowerCase().indexOf(q)>=0)});
+  if(!a.length)return '<div class="empty">Aucune facture ne correspond à ces filtres.</div>';
+  var h='<p class="s" style="margin:0 4px">'+a.length+' facture'+(a.length>1?"s":"")+' · total <b class="num">'+dh(sum(a))+'</b> · payé <b class="num">'+dh(sum(a,"paye"))+'</b></p>';
+  a.forEach(function(f){
     var st=facStatus(f),m=n(f.montant),p=n(f.paye);
     var right=!(f.valP&&f.valT)?((f.valP?"":"Président ")+(f.valT?"":"Trésorier ")+"en attente"):(p>0&&p<m?"Reste "+dh(m-p):"");
     h+='<div class="card" role="button" tabindex="0" data-a="edit" data-col="factures" data-id="'+esc(f.id)+'" data-sid="'+esc(f.id)+'"><div class="line"><span class="t">'+esc(f.fournisseur)+'</span>'+pill(st.t,st.c)+'</div><div class="s" style="margin:4px 0">'+esc([f.numero,f.poste,fdate(f.date)].filter(Boolean).join(" · "))+' '+fileLink(f,"Voir la facture")+'</div><div class="line" style="align-items:baseline"><span class="amt num" style="font-size:16px">'+dh(m)+'</span><span class="s" style="font-weight:600">'+esc(right)+'</span></div></div>';
@@ -875,6 +901,7 @@ function refreshList(){
   var el=$("#list");if(!el)return;
   if(ui.view==="adherents")el.innerHTML=adhRows(state.adherents.filter(inScope),ui.q.toLowerCase());
   else if(ui.view==="documents"){var pid=ui.scope==="asso"?"":P().id;el.innerHTML=docRows(state.documents.filter(function(d){return (d.projet||"")===pid}),ui.q.toLowerCase())}
+  else if(ui.view==="depenses")el.innerHTML=facRows(state.factures.filter(inScope).sort(byDateDesc),ui.q.toLowerCase());
   selDecorate();
 }
 
@@ -1880,7 +1907,7 @@ function aiReset(){
 function aiOpen(){if(!$("#ai-msgs").children.length)aiReset();$("#ai").hidden=false;setTimeout(function(){try{$("#ai-in").focus()}catch(e){}},50)}
 function aiClose(){$("#ai").hidden=true}
 /* ---------- Tableau de bord ---------- */
-var APP_VERSION="2.9",ACCOUNT=null;
+var APP_VERSION="3.0",ACCOUNT=null;
 var EYE_ON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 var EYE_OFF='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.6 10.6 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6A17 17 0 0 0 2 12s3.6 7 10 7a9.8 9.8 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
 function pwEyes(root){
@@ -2214,6 +2241,9 @@ document.addEventListener("click",function(e){
   else if(a==="projet"){ui.projet=id;ui.section="";ui.q="";ui.sel=null;remember();renderAll()}
   else if(a==="section"){ui.section=id;remember();renderAll()}
   else if(a==="chq"){ui.chq=id;renderAll()}
+  else if(a==="dep"){ui.dep=id;ui.q="";ui.sel=null;renderAll()}
+  else if(a==="dep-poste"){ui.dep="factures";ui.fposte=id;ui.fst="";ui.q="";renderAll()}
+  else if(a==="dep-st"){ui.dep="factures";ui.fst=id;ui.fposte="";ui.q="";renderAll()}
   else if(a==="scope"){ui.scope=id;ui.q="";ui.dcat="";renderAll()}
 });
 document.addEventListener("keydown",function(e){
@@ -2223,7 +2253,7 @@ document.addEventListener("keydown",function(e){
 document.addEventListener("input",function(e){
   if(sheet&&sheet.col==="adherents"&&/^fld-(prixM2|surface|prix|avance|dejaPaye)$/.test(e.target.id)){adhPriceCalc(e.target.id);return}
   var id=e.target.id;
-  if(id==="f-q")ui.q=e.target.value;else if(id==="f-dcat")ui.dcat=e.target.value;else return;
+  if(id==="f-q")ui.q=e.target.value;else if(id==="f-dcat")ui.dcat=e.target.value;else if(id==="f-fposte")ui.fposte=e.target.value;else if(id==="f-fst")ui.fst=e.target.value;else return;
   refreshList();
 });
 $("#form").addEventListener("submit",submitForm);
@@ -2247,13 +2277,18 @@ function authMsg(ex){
   if(c==="auth/invalid-credential"||c==="auth/wrong-password"||c==="auth/user-not-found"||c==="auth/invalid-email"||c==="auth/missing-password")return "Email ou mot de passe incorrect.";
   return "Connexion impossible. Réessayez.";
 }
+/* identifiants mémorisés sur l'appareil (case « Mémoriser ») pour se reconnecter sans les retaper */
+var CRED_KEY="amicale-albaraka-cred";
+function credSave(email,pw){try{if($("#lg-mem").checked)localStorage.setItem(CRED_KEY,JSON.stringify({e:email,p:btoa(unescape(encodeURIComponent(pw)))}));else localStorage.removeItem(CRED_KEY)}catch(e){}}
+function credFill(){try{var c=JSON.parse(localStorage.getItem(CRED_KEY)||"null");if(c&&c.e){$("#lg-email").value=c.e;$("#lg-pw").value=decodeURIComponent(escape(atob(c.p||"")));$("#lg-mem").checked=true}}catch(e){}}
+credFill();
 $("#login-form").addEventListener("submit",async function(e){
   e.preventDefault();
   var err=$("#lg-err"),btn=$("#lg-btn"),email=$("#lg-email").value.trim(),pw=$("#lg-pw").value;
   err.textContent="";
   if(!email||!pw){err.textContent="Saisissez votre email et votre mot de passe.";return}
   btn.disabled=true;btn.textContent="Connexion…";
-  try{await signInWithEmailAndPassword(auth,email,pw);$("#lg-pw").value=""}
+  try{await signInWithEmailAndPassword(auth,email,pw);credSave(email,pw);$("#lg-pw").value=""}
   catch(ex){err.textContent=authMsg(ex)}
   btn.disabled=false;btn.textContent="Se connecter";
 });
@@ -2265,7 +2300,7 @@ $("#lg-reset").addEventListener("click",async function(){
 });
 $("#logout").addEventListener("click",function(){signOut(auth).catch(function(){})});
 function showOnly(w){
-  $("#boot").hidden=w!=="boot";$("#login").hidden=w!=="login";
+  $("#boot").hidden=w!=="boot";$("#login").hidden=w!=="login";if(w==="login")credFill();
   document.body.classList.toggle("locked",w!=="app");$("#backup").hidden=w!=="app";
 }
 function route(){setView((location.hash||"#adherents").slice(1))}
@@ -2290,7 +2325,7 @@ function start(){
   var app=initializeApp(firebaseConfig);
   auth=getAuth(app);fdb=getFirestore(app);assets=fsAssets;
   ACCOUNT={email:function(){return auth.currentUser&&auth.currentUser.email||""},
-    changePassword:async function(cur,nw){var u=auth.currentUser;if(!u)throw {code:"auth/no-user"};await reauthenticateWithCredential(u,EmailAuthProvider.credential(u.email,cur));await updatePassword(u,nw)},
+    changePassword:async function(cur,nw){var u=auth.currentUser;if(!u)throw {code:"auth/no-user"};await reauthenticateWithCredential(u,EmailAuthProvider.credential(u.email,cur));await updatePassword(u,nw);try{if(localStorage.getItem(CRED_KEY))localStorage.setItem(CRED_KEY,JSON.stringify({e:u.email,p:btoa(unescape(encodeURIComponent(nw)))}))}catch(e){}},
     logout:function(){signOut(auth).catch(function(){})},
     getMcp:async function(){var sn=await getDoc(doc(fdb,PRE+"meta","mcp"));return sn.exists()?sn.data():null}};
   var acDone=false,acKey="";
