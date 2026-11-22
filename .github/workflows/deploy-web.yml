@@ -2,6 +2,7 @@ name: Publier la version web
 
 # Met l'application en ligne sur GitHub Pages (même compte et mêmes données que l'APK) :
 # https://othmaneelharrar7-star.github.io/amicale-albaraka/
+# Site public (vitrine) : https://othmaneelharrar7-star.github.io/amicale-albaraka/vitrine/
 # À activer une seule fois : Settings > Pages > Source : « GitHub Actions ».
 on:
   push:
@@ -42,6 +43,8 @@ jobs:
         run: |
           mkdir -p site
           cp app/src/main/assets/* site/
+          # Site public (vitrine) : projets, annonces, documents
+          cp -r vitrine site/vitrine
           touch site/.nojekyll
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
