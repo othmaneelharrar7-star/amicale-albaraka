@@ -244,6 +244,35 @@ async function fill(vals){for(const k in vals){const el=$('#form').elements[k];i
     console.log('enc restored:',$('#bk-msg').textContent);if(pay&&!w.__store.am_paiements[pay])errs.push('restauration chiffrée');
     click(d.querySelector('#dash [data-a=dash-close]'));
   }
+  // v3.3 : fichier « Casino » : dimension A1:XFD1048574, parking, tranches en colonnes avec SUM, colonne des noms sans titre
+  {const X=require('xlsx-js-style');
+   const ws={'!ref':'A1:L4'};const put=(a,v,f)=>{ws[a]=f?{t:'n',v,f}:(typeof v==='number'?{t:'n',v}:{t:'s',v})};
+   put('A1','TABLEAU TEST');
+   ['NOM','Désignation Bungalow','Superficie','Prix m²','Supplément Parking','Prix de vente ','','Tranches','','','Total versé','Tranche 100%'].forEach((h,i)=>{if(h)put(X.utils.encode_cell({r:1,c:i}),h)});
+   [['CASINO TEST A',1,200,10000,50000,300000,200000],['CASINO TEST B',2,210,10000,50000,400000,0]].forEach((r,j)=>{const R=j+3;
+     put('A'+R,r[0]);put('B'+R,r[1]);put('C'+R,r[2]);put('D'+R,r[3]);put('E'+R,r[4]);put('F'+R,r[2]*r[3],'C'+R+'*D'+R);put('G'+R,r[2]*r[3]+r[4],'F'+R+'+E'+R);
+     if(r[5])put('H'+R,r[5]);if(r[6])put('I'+R,r[6]);put('K'+R,r[5]+r[6],'SUM(H'+R+':J'+R+')');put('L'+R,r[2]*r[3]+r[4]-r[5]-r[6],'G'+R+'-K'+R)});
+   const wb3=X.utils.book_new();X.utils.book_append_sheet(wb3,ws,'Situation');let b3=X.write(wb3,{type:'buffer',bookType:'xlsx'});
+   {const JSZip=require('jszip');const z=await JSZip.loadAsync(b3);const sp='xl/worksheets/sheet1.xml';let xml=await z.file(sp).async('string');
+    xml=xml.replace(/<dimension ref="[^"]*"\/>/,'<dimension ref="A1:XFD1048574"/>').replace('</sheetData>','<row r="1048574"><c r="W1048574" t="inlineStr"><is><t>x</t></is></c></row></sheetData>');
+    z.file(sp,xml);b3=await z.generateAsync({type:'nodebuffer'});}
+   w.location.hash='#adherents';await sleep(50);
+   click([...d.querySelectorAll('#pills button')].find(b=>b.textContent==='Casino 2'));await sleep(30);
+   const f3=new w.File([b3],'casino-test.xlsx');if(!f3.arrayBuffer)f3.arrayBuffer=async()=>b3.buffer.slice(b3.byteOffset,b3.byteOffset+b3.length);
+   const inp3=$('#imp-file');Object.defineProperty(inp3,'files',{value:[f3],configurable:true});const t3=Date.now();inp3.dispatchEvent(new w.Event('change',{bubbles:true}));
+   for(let i=0;i<100&&$('#detail').hidden;i++)await sleep(50);console.log('casino lecture',Date.now()-t3,'ms');
+   click($('#imp-go'));for(let i=0;i<200&&!$('#detail').hidden;i++)await sleep(50);
+   const ca=Object.entries(w.__store.am_adherents).filter(([k,v])=>/^CASINO TEST/.test(v.nom));
+   console.log('casino import:',JSON.stringify(ca.map(([k,v])=>[v.lot,v.prix,v.dejaPaye,v.dejaPayeParts||null])));
+   const A=ca.find(([k,v])=>v.nom==='CASINO TEST A');
+   if(ca.length!==2||!A||A[1].lot!=='1'||A[1].prix!==2050000||JSON.stringify(A[1].dejaPayeParts)!=='[300000,200000]')errs.push('casino import');
+   click(d.querySelector('#view [data-a=detail][data-id="'+A[0]+'"]'));await sleep(30);
+   click(d.querySelector('#detail [data-a=new][data-col=paiements]'));await sleep(20);$('#form').elements.montant.value='100000';submit('#form');await sleep(60);
+   click(d.querySelector('[data-a=close-detail]'));await sleep(20);
+   w.__saved.length=0;click(d.querySelector('#view [data-a=xl][data-id=adherents]'));for(let i=0;i<100&&!w.__saved.length;i++)await sleep(50);
+   const fx=w.__saved.pop();const wo=X.read(Buffer.from(fx.b,'base64'),{cellFormula:true,sheetRows:20}).Sheets['Situation'];
+   console.log('casino export:',fx.n,'| J3',wo.J3&&wo.J3.v,'| K3',wo.K3&&wo.K3.f);
+   if(!wo.J3||wo.J3.v!==100000||!/SUM/.test(wo.K3&&wo.K3.f||''))errs.push('casino export');}
   console.log('errors:',errs);
   if(errs.length){console.error('ÉCHEC : erreurs JavaScript');process.exitCode=1}else console.log('OK : test réussi');
   process.exit(process.exitCode||0);

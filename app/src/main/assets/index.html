@@ -1261,9 +1261,11 @@ function headKey(h){
   var t=normH(h);if(!t||/^-?[\d\s.,]+$/.test(t))return "";
   if(/^(n|n°|no|num|numero|nº|#|ordre|n° d'ordre)\.?$/.test(t))return "num";
   if(/prix.*m2|\/ ?m2|prix unitaire|prix au m|^colonne1$/.test(t))return "prixM2";
-  if(/prix total|montant total|prix de vente|^total$|^total ttc$|^montant$/.test(t))return "prix";
+  if(/parking|supplement/.test(t))return "supp";
+  if(/prix total|montant total|prix de vente|total vente|^total$|^total ttc$|^montant$/.test(t))return "prix";
   if(/^prix$/.test(t))return "prixAmb";
   if(/avance|acompte/.test(t))return "avance";
+  if(/tranche\s*100/.test(t))return "reste";
   if(/tranche/.test(t))return "skip";
   if(/reste/.test(t))return "reste";
   if(/paye|verse|encaisse|regle|cheque|recu/.test(t))return "paye";
@@ -1353,11 +1355,34 @@ function partsOf(f,total){
   var sm=ps.reduce(function(a,b){return a+b},0);
   return Math.abs(sm-n(total))<=1?ps:null;
 }
+/* « Total versé » = SUM(L6:V6) : chaque case remplie de la ligne est un versement */
+function sumParts(XL,ws,f,r,total){
+  var mm=String(f||"").replace(/\$/g,"").match(/^=?SUM\(([A-Z]{1,3})(\d+):([A-Z]{1,3})(\d+)\)$/i);
+  if(!mm||+mm[2]!==r+1||+mm[4]!==r+1)return null;
+  var a=XL.utils.decode_col(mm[1].toUpperCase()),b=XL.utils.decode_col(mm[3].toUpperCase()),ps=[];
+  for(var c=a;c<=b;c++){var cl=ws[XL.utils.encode_cell({r:r,c:c})],v=cl?numOf(cl.v):NaN;if(isNaN(v)||v===0)continue;if(v<0)return null;ps.push(Math.round(v))}
+  var sm=ps.reduce(function(x,y){return x+y},0);
+  return ps.length>=2&&Math.abs(sm-n(total))<=1?ps:null;
+}
 function partsValid(a){var ps=a&&a.dejaPayeParts;if(!Array.isArray(ps)||ps.length<2)return null;var sm=ps.reduce(function(x,y){return x+n(y)},0);return Math.abs(sm-n(a.dejaPaye))<=1?ps:null}
+/* zone réellement remplie : certains fichiers annoncent toute la feuille (A1:XFD1048574) à cause d'une cellule isolée tout en bas,
+   ce qui bloquerait la lecture. On garde le bloc principal et on ignore les cellules perdues à plus de 500 lignes / 60 colonnes. */
+function usedRange(XL,ws){
+  var cells=[];
+  for(var k in ws){if(k.charAt(0)==="!")continue;var c=ws[k];if(!c||c.v===undefined||c.v===null||String(c.v).trim()==="")continue;cells.push(XL.utils.decode_cell(k))}
+  if(!cells.length)return null;
+  cells.sort(function(a,b){return a.r-b.r});
+  var r0=cells[0].r,r1=r0,c0=1e9,c1=0;
+  cells.forEach(function(a){if(a.r-r1<=500)r1=Math.max(r1,a.r)});
+  var cs=cells.filter(function(a){return a.r<=r1}).map(function(a){return a.c}).sort(function(a,b){return a-b});
+  c0=cs[0];c1=c0;cs.forEach(function(c){if(c-c1<=60)c1=Math.max(c1,c)});
+  return {s:{r:r0,c:c0},e:{r:r1,c:c1}};
+}
 function readSheet(XL,ws,name){
   if(!ws||!ws["!ref"])return null;
-  var rg=XL.utils.decode_range(ws["!ref"]),r0=rg.s.r,c0=rg.s.c;
-  var raw=XL.utils.sheet_to_json(ws,{header:1,raw:true,defval:"",blankrows:true});
+  var rg=usedRange(XL,ws);if(!rg)return null;
+  var r0=rg.s.r,c0=rg.s.c;
+  var raw=XL.utils.sheet_to_json(ws,{header:1,raw:true,defval:"",blankrows:true,range:rg});
   var grp={};(ws["!merges"]||[]).forEach(function(mg){if(mg.e.c>mg.s.c)grp[(mg.s.r-r0)+","+(mg.s.c-c0)]=1});
   var txt=function(v){return String(v==null?"":v).replace(/\s+/g," ").trim()};
   var nonEmpty=function(r){return r.filter(function(v){return txt(v)!==""})};
@@ -1388,6 +1413,7 @@ function readSheet(XL,ws,name){
   blocks.forEach(function(b,bi){
     if(!b.rows.length)return;
     var m=b.map?fixMap(Object.assign({},b.map),b.rows):null;
+    if(m&&m.nom==null){var gm=inferMap(b.rows),usedC={};Object.keys(m).forEach(function(k){usedC[m[k]]=1});if(gm.nom!=null&&!usedC[gm.nom])m.nom=gm.nom}
     if(!m){var inh=b.inherit?fixMap(Object.assign({},b.inherit),b.rows):null;m=(inh&&mapScore(inh,b.rows)>=0.6)?inh:inferMap(b.rows);b.guessed=!(inh&&m===inh)}
     if(m.lot==null&&m.nom==null)return;
     var recs=[];
@@ -1395,18 +1421,25 @@ function readSheet(XL,ws,name){
       var g=function(k){return m[k]==null?"":row.cells[m[k]]},line=row.i+r0+1;
       var lot=txt(g("lot")),nom=txt(g("nom")),nm=txt(g("num"));
       var w=function(msg){warns.push((b.title||"Tableau "+(bi+1))+" · ligne "+line+(lot?" ("+lot+")":"")+" : "+msg)};
-      if(!lot&&nm&&nom)lot="N°"+nm;
+      if(!lot&&nm&&(nom||txt(g("surface"))))lot="N°"+nm;
       if(!lot&&!nom)return;
       var rec={nom:nom,lot:lot,immeuble:txt(g("immeuble")),etage:txt(g("etage"))||etageOf(g("nature")),surface:Math.round(parseNum(g("surface"),w)*100)/100,
         prixM2:Math.round(parseNum(g("prixM2"),w)),prix:Math.round(parseNum(g("prix"),w)),avance:Math.round(parseNum(g("avance"),w)),dejaPaye:Math.round(parseNum(g("paye"),w)),
         tel:m.tel!=null&&m.tel!==m.nom?txt(g("tel")):"",note:txt(g("note")),section:txt(g("section")),_reste:numOf(g("reste")),_nature:txt(g("nature")),
         _src:{sheet:name,row:line,cols:{}}};
       Object.keys(m).forEach(function(k){rec._src.cols[k]=m[k]+c0});
-      if(m.paye!=null){var pc=ws[XL.utils.encode_cell({r:row.i+r0,c:m.paye+c0})],pp=pc&&pc.f?partsOf(pc.f,rec.dejaPaye):null;if(pp)rec.dejaPayeParts=pp}
+      if(m.paye!=null){var pc=ws[XL.utils.encode_cell({r:row.i+r0,c:m.paye+c0})],pp=pc&&pc.f?(partsOf(pc.f,rec.dejaPaye)||sumParts(XL,ws,pc.f,row.i+r0,rec.dejaPaye)):null;if(pp)rec.dejaPayeParts=pp}
+      if(m.supp!=null){var sp=Math.round(parseNum(g("supp"),w));if(sp>0){rec._supp=sp;rec.note=[rec.note,"Supplément parking "+num(sp)+" DH (compris dans le prix)"].filter(Boolean).join(" · ")}}
       if(!rec.immeuble&&/^[A-Z][-. ]?\d/.test(lot))rec.immeuble=lot.charAt(0);
       if(!rec.immeuble){var im=lot.match(/^imm?(?:euble)?\.?\s*([A-Z])\b/i);if(im)rec.immeuble=im[1].toUpperCase()}
       if(!rec.prix&&rec.prixM2&&rec.surface)rec.prix=Math.round(rec.prixM2*rec.surface);
       if(!rec.prixM2&&rec.prix&&rec.surface)rec.prixM2=Math.round(rec.prix/rec.surface);
+      /* parking : ajouté au prix, sauf si le prix de la ligne le contient déjà (le « reste » du fichier le montre) */
+      if(rec._supp){var rs=rec._reste;
+        if(isNaN(rs)||Math.abs(rec.prix+rec._supp-rec.dejaPaye-rs)<=1)rec.prix+=rec._supp;
+        else if(Math.abs(rec.prix-rec.dejaPaye-rs)<=1)rec.note=rec.note.replace(/ \(compris dans le prix\)$/," (déjà dans le prix)");
+        else{var pr2=Math.round(rec.dejaPaye+rs);w("prix "+num(rec.prix)+" + parking "+num(rec._supp)+" ne correspond pas au reste du fichier : prix retenu "+num(pr2)+" (payé + reste)");rec.prix=pr2}}
+      delete rec._supp;
       recs.push(rec);
     });
     if(!recs.length)return;
@@ -1447,7 +1480,7 @@ function impPrepSel(){
   var free=sections(p).filter(function(sx){return !used[sx]&&/residence|lot|bungalow|villa/.test(normH(sx))});
   bl.forEach(function(b,bi){if(!st.sel[bi]&&b.numLots&&free.length)st.sel[bi]=free.shift()});
 }
-function impLot(rec,blk,section){return blk.numLots&&/^\d+$/.test(rec.lot)?abbrev(section||blk.title||"Lot")+"-"+rec.lot:rec.lot}
+function impLot(rec,blk,section){var p=P();if(isBung(p)&&!sections(p).length)return String(rec.lot).replace(/^N°\s*/,"");return blk.numLots&&/^\d+$/.test(rec.lot)?abbrev(section||blk.title||"Lot")+"-"+rec.lot:rec.lot}
 function impMatch(rec,p,section,lot){
   var key=normH(lot),list=state.adherents.filter(function(a){return a.projet===p.id});
   if(key){
@@ -1653,7 +1686,16 @@ async function buildFromModel(p){
     var paid=Math.round(paidOf(a)),prix=n(a.prix),fr=isFree(a),nm=fr?"":String(a.nom||"").trim();
     var ch={nom:nm!==String(v0.nom||"").trim(),paye:paid!==n(v0.paye),prix:prix!==n(v0.prix),avance:n(a.avance)!==n(v0.avance),tel:(a.tel||"")!==(v0.tel||"")};
     if(ch.nom&&s2.cols.nom!==s2.cols.lot)put("nom",nm||null);
-    if(ch.paye||ch.nom)put("paye",fr?null:paid);
+    if(ch.paye||ch.nom){
+      /* « Total versé » = SUM(L6:V6) : le nouveau versement va dans la première case vide de la ligne, la formule fait le total */
+      var pcol=s2.cols.paye,pcell=pcol!=null?ws.getCell(s2.row,pcol+1):null,pf=pcell&&isF(pcell)?String(pcell.formula||(pcell.value&&pcell.value.formula)||""):"";
+      var sm=pf.replace(/\$/g,"").match(/^=?SUM\(([A-Z]{1,3})(\d+):([A-Z]{1,3})(\d+)\)$/i);
+      if(sm&&+sm[2]===s2.row&&+sm[4]===s2.row&&!fr){
+        var ca=xlColN(sm[1].toUpperCase()),cb=xlColN(sm[3].toUpperCase()),cur=0,empty=null;
+        for(var cc=ca;cc<=cb;cc++){var cl=ws.getCell(s2.row,cc),vv=cl.value;if(vv&&typeof vv==="object")vv=vv.result;if(typeof vv==="number")cur+=vv;else if((vv==null||vv==="")&&empty==null&&!isF(cl))empty=cl}
+        var diff=Math.round(paid-cur);if(diff>0&&empty){empty.value=diff;if(pcell.value&&typeof pcell.value==="object")pcell.value={formula:pf.replace(/^=/,""),result:paid}}
+      }else put("paye",fr?null:paid);
+    }
     if(ch.prix&&prix)put("prix",prix);
     if(ch.avance&&n(a.avance))put("avance",n(a.avance));
     if(ch.tel&&s2.cols.tel!=null&&s2.cols.tel!==s2.cols.nom)put("tel",a.tel||null);
@@ -1957,7 +1999,7 @@ function aiReset(){
 function aiOpen(){if(!$("#ai-msgs").children.length)aiReset();$("#ai").hidden=false;setTimeout(function(){try{$("#ai-in").focus()}catch(e){}},50)}
 function aiClose(){$("#ai").hidden=true}
 /* ---------- Tableau de bord ---------- */
-var APP_VERSION="3.2",ACCOUNT=null;
+var APP_VERSION="3.3",ACCOUNT=null;
 var EYE_ON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 var EYE_OFF='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.6 10.6 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6A17 17 0 0 0 2 12s3.6 7 10 7a9.8 9.8 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
 function pwEyes(root){
