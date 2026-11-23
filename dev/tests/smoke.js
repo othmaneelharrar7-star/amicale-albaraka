@@ -273,6 +273,24 @@ async function fill(vals){for(const k in vals){const el=$('#form').elements[k];i
    const fx=w.__saved.pop();const wo=X.read(Buffer.from(fx.b,'base64'),{cellFormula:true,sheetRows:20}).Sheets['Situation'];
    console.log('casino export:',fx.n,'| J3',wo.J3&&wo.J3.v,'| K3',wo.K3&&wo.K3.f);
    if(!wo.J3||wo.J3.v!==100000||!/SUM/.test(wo.K3&&wo.K3.f||''))errs.push('casino export');}
+  // v3.4 : case « payé » avec formule (=150000, =+E3) : le nouveau paiement s'ajoute à la formule dans l'Excel d'origine
+  {const X=require('xlsx-js-style');const ws={'!ref':'A1:G3'};const put=(a,v,f)=>{ws[a]=f?{t:'n',v,f}:(typeof v==='number'?{t:'n',v}:{t:'s',v})};
+   ['N lot','surface','Prix','Total','Avance','Adhérent','Montant payé'].forEach((h,i)=>put(X.utils.encode_cell({r:0,c:i}),h));
+   [[31,100,10000,'FORMULE TEST A',150000,'150000'],[32,100,10000,'FORMULE TEST B',400000,'+E3']].forEach((r,j)=>{const R=j+2;
+     put('A'+R,r[0]);put('B'+R,r[1]);put('C'+R,r[2]);put('D'+R,r[1]*r[2],'B'+R+'*C'+R);put('E'+R,r[1]*r[2]*0.4,'D'+R+'*40%');put('F'+R,r[3]);put('G'+R,r[4],r[5])});
+   const wb4=X.utils.book_new();X.utils.book_append_sheet(wb4,ws,'Liste');const b4=X.write(wb4,{type:'buffer',bookType:'xlsx'});
+   w.location.hash='#adherents';await sleep(50);
+   click([...d.querySelectorAll('#pills button')].find(b=>b.textContent==='Casino 1'));await sleep(30);
+   const f4=new w.File([b4],'formules.xlsx');if(!f4.arrayBuffer)f4.arrayBuffer=async()=>b4.buffer.slice(b4.byteOffset,b4.byteOffset+b4.length);
+   const inp4=$('#imp-file');Object.defineProperty(inp4,'files',{value:[f4],configurable:true});inp4.dispatchEvent(new w.Event('change',{bubbles:true}));
+   for(let i=0;i<100&&$('#detail').hidden;i++)await sleep(50);click($('#imp-go'));for(let i=0;i<200&&!$('#detail').hidden;i++)await sleep(50);
+   for(const [nm,m] of [['FORMULE TEST A',78000],['FORMULE TEST B',244000]]){const id=Object.entries(w.__store.am_adherents).find(([k,v])=>v.nom===nm)[0];
+     click(d.querySelector('#view [data-a=detail][data-id="'+id+'"]'));await sleep(30);click(d.querySelector('#detail [data-a=new][data-col=paiements]'));await sleep(20);
+     $('#form').elements.montant.value=String(m);submit('#form');await sleep(60);click(d.querySelector('[data-a=close-detail]'));await sleep(20)}
+   w.__saved.length=0;click(d.querySelector('#view [data-a=xl][data-id=adherents]'));for(let i=0;i<100&&!w.__saved.length;i++)await sleep(50);
+   const wo=X.read(Buffer.from(w.__saved.pop().b,'base64'),{cellFormula:true}).Sheets['Liste'];
+   console.log('formules export: G2',wo.G2&&wo.G2.f,wo.G2&&wo.G2.v,'| G3',wo.G3&&wo.G3.f,wo.G3&&wo.G3.v);
+   if((wo.G2&&wo.G2.f)!=='150000+78000'||(wo.G3&&wo.G3.f)!=='+E3+244000'||wo.G3.v!==644000)errs.push('excel formule payé');}
   console.log('errors:',errs);
   if(errs.length){console.error('ÉCHEC : erreurs JavaScript');process.exitCode=1}else console.log('OK : test réussi');
   process.exit(process.exitCode||0);
