@@ -42,6 +42,12 @@ const w=dom.window;w.addEventListener('error',e=>errs.push(e.message));
 const d=w.document;const $=s=>d.querySelector(s);
 const click=el=>el.dispatchEvent(new w.MouseEvent('click',{bubbles:true}));
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+/* aperçu Excel (v3.5) : dans les tests, on appuie tout de suite sur « Télécharger » puis on ferme */
+let xlvSeen=null;
+new w.MutationObserver(()=>{const v=d.querySelector('#xlview');if(!v)return;if(v.hidden){delete v.dataset.auto;return}
+  if(!v.dataset.auto){v.dataset.auto=1;setTimeout(()=>{xlvSeen={title:d.querySelector('#xlv-title').textContent,body:d.querySelector('#xlv-body').textContent,tabs:d.querySelectorAll('#xlv-tabs button').length};
+    const b=d.querySelector('[data-a=xlv-dl]');b.dispatchEvent(new w.MouseEvent('click',{bubbles:true}));setTimeout(()=>d.querySelector('[data-a=xlv-close]').dispatchEvent(new w.MouseEvent('click',{bubbles:true})),0)},0)}})
+  .observe(d.body,{subtree:true,attributes:true,attributeFilter:['hidden']});
 const submit=id=>$(id).dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
 async function fill(vals){for(const k in vals){const el=$('#form').elements[k];if(!el)throw new Error('no field '+k);if(el.type==='checkbox')el.checked=vals[k];else el.value=vals[k]}
   submit('#form');await sleep(40);if(!$('#overlay').hidden)throw new Error('form still open: '+$('#form-err').textContent)}
@@ -100,7 +106,7 @@ async function fill(vals){for(const k in vals){const el=$('#form').elements[k];i
   console.log('paiements before/after:',before,Object.keys(w.__store.am_paiements||{}).length);
   console.log('tool responses sent:',JSON.stringify(w.__aiSent.slice(1)).slice(0,300));
   console.log('last msg html:',[...d.querySelectorAll('.msg.ai')].pop().innerHTML);
-  const XLSX=require('xlsx-js-style');const f=w.__saved.pop();console.log('excel from AI:',f.n);
+  for(let i=0;i<80&&!w.__saved.length;i++)await sleep(25);const XLSX=require('xlsx-js-style');const f=w.__saved.pop();console.log('excel from AI:',f.n);
   const wb=XLSX.read(Buffer.from(f.b,'base64'),{cellStyles:true});const ws=wb.Sheets['Liste par étage'];
   console.log('sheets:',wb.SheetNames.join(','));console.log('rows:',JSON.stringify(XLSX.utils.sheet_to_json(ws,{header:1}).slice(0,4)));
   
@@ -129,7 +135,7 @@ async function fill(vals){for(const k in vals){const el=$('#form').elements[k];i
   se.value='Appartements';se.dispatchEvent(new w.Event('change',{bubbles:true}));console.log('valdor Appart etage hidden',$('#fld-etage').parentNode.hidden);
   click(d.querySelector('[data-a=close]'));await sleep(20);
   // all-projects export
-  click($('#btn-xl-all'));await sleep(2500);
+  w.__saved.length=0;click($('#btn-xl-all'));for(let i=0;i<120&&!w.__saved.length;i++)await sleep(50);
   {const X=require('xlsx-js-style');const f=w.__saved.pop();console.log('ALL export:',f&&f.n);const wb=X.read(Buffer.from(f.b,'base64'));console.log('tabs:',wb.SheetNames.join(' | '));
    const c1=wb.Sheets['Casino 1'];console.log('casino tab:',JSON.stringify(X.utils.sheet_to_json(c1,{header:1}).slice(0,3)));
    console.log('resume:',JSON.stringify(X.utils.sheet_to_json(wb.Sheets['Résumé'],{header:1}).slice(0,7)));
@@ -291,6 +297,23 @@ async function fill(vals){for(const k in vals){const el=$('#form').elements[k];i
    const wo=X.read(Buffer.from(w.__saved.pop().b,'base64'),{cellFormula:true}).Sheets['Liste'];
    console.log('formules export: G2',wo.G2&&wo.G2.f,wo.G2&&wo.G2.v,'| G3',wo.G3&&wo.G3.f,wo.G3&&wo.G3.v);
    if((wo.G2&&wo.G2.f)!=='150000+78000'||(wo.G3&&wo.G3.f)!=='+E3+244000'||wo.G3.v!==644000)errs.push('excel formule payé');}
+  // v3.5 : aperçu Excel, paliers 60 / 80 / 100 %, colonnes « Reste pour 60 % / 80 % »
+  {console.log('aperçu vu:',xlvSeen&&xlvSeen.title,'| contenu:',xlvSeen&&xlvSeen.body.slice(0,60),'| feuilles:',xlvSeen&&xlvSeen.tabs);
+   if(!xlvSeen||!/FORMULE TEST/.test(xlvSeen.body))errs.push('aperçu excel');
+   const id=Object.entries(w.__store.am_adherents).find(([k,v])=>v.nom==='FORMULE TEST A')[0];
+   console.log('carte palier:',(d.querySelector('#view [data-a=detail][data-id="'+id+'"] .nextp')||{}).textContent);
+   click(d.querySelector('#view [data-a=detail][data-id="'+id+'"]'));await sleep(30);
+   const pal=[...d.querySelectorAll('#detail .palier')].map(x=>x.textContent);console.log('paliers:',pal.join(' | '));
+   if(pal.length!==4||!/Reste 172 000/.test(pal[0])||!/Reste 372 000/.test(pal[1])||!/Reste 572 000/.test(pal[2])||!/Reste 772 000/.test(pal[3]))errs.push('paliers');
+   click(d.querySelector('[data-a=close-detail]'));await sleep(20);
+   const ws=d.querySelector('[data-a=seg]');
+   w.location.hash='#adherents';await sleep(30);
+   click([...d.querySelectorAll('#pills button')].find(b=>b.textContent==="Val d'Or"));await sleep(30);
+   click([...d.querySelectorAll('#seg button')].find(b=>b.textContent==='Résidence 1'));await sleep(30);
+   w.__saved.length=0;click(d.querySelector('#view [data-a=xl][data-id=adherents]'));for(let i=0;i<100&&!w.__saved.length;i++)await sleep(50);
+   const X=require('xlsx-js-style');const f=w.__saved.pop();const wb=X.read(Buffer.from(f.b,'base64'));const hdr=X.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1}).find(r=>r.includes('Reste à payer'))||[];
+   console.log('colonnes R1:',f.n,'|',hdr.filter(x=>/Reste/.test(x)).join(' | '));if(!hdr.includes('Reste pour 60 %')||!hdr.includes('Reste pour 80 %'))errs.push('colonnes 60/80');
+   click([...d.querySelectorAll('#seg button')].find(b=>b.textContent==='Tout'));await sleep(20);}
   console.log('errors:',errs);
   if(errs.length){console.error('ÉCHEC : erreurs JavaScript');process.exitCode=1}else console.log('OK : test réussi');
   process.exit(process.exitCode||0);

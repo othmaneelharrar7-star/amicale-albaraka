@@ -79,6 +79,21 @@ main{padding:2px 16px 120px;display:flex;flex-direction:column;gap:10px}
 .fab svg{width:22px;height:22px}
 .fab[hidden]{display:none}
 body.selmode .fab{display:none}
+#xlview{z-index:30}
+.sheet.xlv{max-width:1100px;width:100%;display:flex;flex-direction:column;max-height:94vh}
+.xlv-wrap{overflow:auto;flex:1;min-height:200px;border-radius:14px;background:#fff;border:1px solid #dde3ee;margin-top:8px;-webkit-overflow-scrolling:touch}
+.xlv-wrap table{border-collapse:collapse;font-size:12px;color:#1a2433}
+.xlv-wrap td{border:1px solid #e3e8f1;padding:5px 8px;white-space:nowrap;max-width:320px;overflow:hidden;text-overflow:ellipsis}
+.xlv-wrap td.n{text-align:right;font-variant-numeric:tabular-nums}
+.xlv-wrap tr:first-child td{background:var(--blue-soft);font-weight:700;position:sticky;top:0}
+.paliers{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0}
+.palier{border-radius:14px;padding:10px;background:rgba(255,255,255,.6);border:1px solid rgba(59,115,197,.18);text-align:center}
+.palier b{color:var(--bad)}
+.palier small{display:block;font-size:11px;color:var(--muted);font-weight:700}
+.palier b{display:block;font-size:13px;margin-top:4px}
+.palier.ok{background:rgba(46,139,62,.12);border-color:rgba(46,139,62,.25)}.palier.ok b{color:#2E8B3E}
+@media (max-width:420px){.paliers{grid-template-columns:repeat(2,1fr)}}
+.nextp{font-size:12px;color:var(--blue-ink);font-weight:600;margin-top:2px}
 .calc{grid-column:1/-1;margin:2px 0 0;padding:10px 12px;border-radius:14px;background:var(--blue-soft);color:var(--blue-ink);font-size:13px}
 .calc:empty{display:none}
 .ok-t{color:#2E8B3E}
@@ -402,6 +417,14 @@ header{background:rgba(245,249,255,.62);-webkit-backdrop-filter:blur(22px) satur
   </div>
 </div>
 
+<div class="overlay over" id="xlview" hidden>
+  <div class="sheet xlv" role="dialog" aria-modal="true" aria-labelledby="xlv-title">
+    <div class="chat-head"><h2 id="xlv-title">Aperçu Excel</h2><span class="hbtns"><button type="button" class="btn xl" data-a="xlv-dl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Télécharger</button><button type="button" class="btn ghost round" data-a="xlv-close" aria-label="Fermer l'aperçu">×</button></span></div>
+    <p class="s" id="xlv-sub" style="margin:4px 0 8px"></p>
+    <div class="seg" id="xlv-tabs" role="group" aria-label="Feuilles du fichier"></div>
+    <div class="xlv-wrap" id="xlv-body" tabindex="0" aria-label="Contenu de la feuille"></div>
+  </div>
+</div>
 <div class="overlay over" id="overlay" hidden>
   <form class="sheet" id="form" novalidate>
     <h2 id="form-title"></h2>
@@ -737,10 +760,18 @@ function adhRows(all,q){
     }
     var k=trancheOf(x);
     var paid=paidOf(x),prix=n(x.prix),pc=pctOf(paid,prix),rest=Math.max(0,prix-paid),done=prix>0&&rest===0;
-    h+='<div class="card" data-sid="'+esc(x.id)+'"><button type="button" class="row rowbtn" data-a="detail" data-id="'+esc(x.id)+'"><span class="av" aria-hidden="true">'+ini(x.nom)+'</span><span class="mid"><span class="t">'+esc(x.nom)+(x.lot?' <span>· '+esc(isBung(projOf(x))?"Bungalow "+x.lot:x.lot)+(x.immeuble&&showEtage(projOf(x),x.section)&&String(x.lot).indexOf(x.immeuble)!==0?' (Imm. '+esc(x.immeuble)+')':'')+'</span>':'')+'</span><span class="two num"><span class="s">Prix '+num(prix)+'</span><span class="s" style="font-weight:700;color:var(--blue-ink)">'+(done?"Soldé":tranche(k))+'</span></span><span class="bar"><i style="width:'+pc+'%"></i></span><span class="two num"><span class="p">Payé '+num(paid)+'</span><span class="r">Reste '+num(rest)+'</span></span></span>'+pill(pc+" %",done?"ok":"info")+'</button><div class="line" style="margin-top:10px;gap:8px"><button type="button" class="btn ghost" style="flex:1" data-a="detail" data-id="'+esc(x.id)+'">Voir la fiche</button><button type="button" class="btn" style="flex:1" data-a="pay" data-id="'+esc(x.id)+'">+ Paiement</button></div></div>';
+    h+='<div class="card" data-sid="'+esc(x.id)+'"><button type="button" class="row rowbtn" data-a="detail" data-id="'+esc(x.id)+'"><span class="av" aria-hidden="true">'+ini(x.nom)+'</span><span class="mid"><span class="t">'+esc(x.nom)+(x.lot?' <span>· '+esc(isBung(projOf(x))?"Bungalow "+x.lot:x.lot)+(x.immeuble&&showEtage(projOf(x),x.section)&&String(x.lot).indexOf(x.immeuble)!==0?' (Imm. '+esc(x.immeuble)+')':'')+'</span>':'')+'</span><span class="two num"><span class="s">Prix '+num(prix)+'</span><span class="s" style="font-weight:700;color:var(--blue-ink)">'+(done?"Soldé":tranche(k))+'</span></span><span class="bar"><i style="width:'+pc+'%"></i></span><span class="two num"><span class="p">Payé '+num(paid)+'</span><span class="r">Reste '+num(rest)+'</span></span>'+(prix>0?palNext(x,paid,prix):'')+'</span>'+pill(pc+" %",done?"ok":"info")+'</button><div class="line" style="margin-top:10px;gap:8px"><button type="button" class="btn ghost" style="flex:1" data-a="detail" data-id="'+esc(x.id)+'">Voir la fiche</button><button type="button" class="btn" style="flex:1" data-a="pay" data-id="'+esc(x.id)+'">+ Paiement</button></div></div>';
   });
   return h;
 }
+/* paliers : avance (40 %), 60 %, 80 %, 100 % : ce qui manque pour chacun */
+var PALIERS=[0.4,0.6,0.8,1];
+function palList(a,paid,prix){return PALIERS.map(function(p){var t=p===0.4&&n(a.avance)?n(a.avance):Math.round(prix*p);return {p:p,label:p===0.4?"Avance "+(n(a.avance)&&Math.abs(n(a.avance)-prix*0.4)>2?pctOf(n(a.avance),prix):40)+" %":Math.round(p*100)+" %",cible:t,manque:Math.max(0,Math.round(t-paid))}})}
+function palHTML(a,paid,prix){
+  return '<h3 class="grp" style="margin-top:12px"><span>Reste à payer par palier</span></h3><div class="paliers num">'+palList(a,paid,prix).map(function(x){
+    return '<div class="palier'+(x.manque?'':' ok')+'"><small>'+esc(x.label)+' · '+short(x.cible)+'</small><b>'+(x.manque?'Reste '+dh(x.manque):'✓ Atteint')+'</b></div>'}).join("")+'</div>';
+}
+function palNext(a,paid,prix){var x=palList(a,paid,prix).find(function(y){return y.manque>0});return x&&x.p<1?'<span class="nextp">Pour '+esc(x.label.replace(/^Avance /,"l'avance "))+' : reste '+dh(x.manque)+'</span>':''}
 function renderDetail(){
   var a=state.adherents.find(function(x){return x.id===detailId});
   if(!a){if(!impState)closeDetail();return}
@@ -749,6 +780,7 @@ function renderDetail(){
   $("#detail-title").textContent=adhName(a);
   var h='<p class="s" style="margin:-8px 0 12px">'+esc([isBung(projOf(a))&&a.lot?"Bungalow "+a.lot:a.lot,a.immeuble&&showEtage(projOf(a),a.section)?"Immeuble "+a.immeuble:"",showEtage(projOf(a),a.section)?a.etage:"",a.section,a.surface?a.surface+" m²":"",a.prixM2?num(a.prixM2)+" DH/m²":"",a.avance?"Avance exigée "+dh(a.avance):"",a.tel].filter(Boolean).join(" · "))+'</p>';
   h+='<div class="kpis num"><div class="kpi"><small>Prix total</small><b>'+dh(prix)+'</b></div><div class="kpi"><small>Tranche atteinte</small><b>'+(prix>0&&rest===0?"Soldé":tranche(trancheOf(a)))+'</b></div><div class="kpi"><small>Payé · '+pctOf(paid,prix)+' %</small><b style="color:var(--good)">'+dh(paid)+'</b></div><div class="kpi"><small>Reste à payer</small><b style="color:var(--bad)">'+dh(rest)+'</b></div></div><div class="bar" style="height:8px;margin-bottom:14px"><i style="width:'+pctOf(paid,prix)+'%"></i></div>';
+  if(prix>0)h+=palHTML(a,paid,prix);
   h+='<div class="head" style="margin-bottom:10px"><h2>Paiements</h2><span class="hbtns"><button type="button" class="btn xl" data-a="xl" data-id="adherent" aria-label="Télécharger la fiche de cet adhérent en Excel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Excel</button><button type="button" class="btn" data-a="new" data-col="paiements">+ Paiement</button></span></div><div class="stack">';
   if(!pays.length&&!n(a.dejaPaye)&&!a.fileId)h+='<div class="empty" style="box-shadow:none;background:var(--bg)">Aucun paiement enregistré.</div>';
   pays.forEach(function(p){
@@ -1010,7 +1042,7 @@ function filesTxt(x){return x.fileId?"Oui":""}
 function shAdherents(){
   var p=P(),showE=showEtage(p,ui.section),bung=isBung(p);
   var all=state.adherents.filter(inScope).sort(lotSort);
-  var defs=[["num","N°",7.3],["etage","Étage",18.3],["imm","Immeuble",13.7],["lot",lotWord(p,ui.section),14],["sf","Surface (m²)",11.7],["m2","Prix/m²",11.7,1],["prix","Prix total",13.6,1],["av","Avance",12,1],["paye","Montant payé",16.6,1],["reste","Reste à payer",18.5,1],["nom","Coordonnées ",27.7],["note","Commentaire",30]];
+  var defs=[["num","N°",7.3],["etage","Étage",18.3],["imm","Immeuble",13.7],["lot",lotWord(p,ui.section),14],["sf","Surface (m²)",11.7],["m2","Prix/m²",11.7,1],["prix","Prix total",13.6,1],["av","Avance",12,1],["paye","Montant payé",16.6,1],["reste","Reste à payer",18.5,1],["r60","Reste pour 60 %",16,1],["r80","Reste pour 80 %",16,1],["nom","Coordonnées ",27.7],["note","Commentaire",30]];
   if(!showE)defs=defs.filter(function(d){return d[0]!=="etage"&&d[0]!=="imm"});
   var L={};defs.forEach(function(d,i){L[d[0]]=colLetter(i+1)});
   var rows=all.map(function(a,i){
@@ -1018,7 +1050,8 @@ function shAdherents(){
     var v={num:i+1,etage:a.etage||"",imm:a.immeuble||"",lot:a.lot||"",sf:sf||"",m2:m2||"",
       prix:(m2&&sf&&Math.abs(m2*sf-prix)<1)?{f:L.m2+"{r}*"+L.sf+"{r}",v:prix}:prix,
       av:av?(Math.abs(av-prix*0.4)<1?{f:L.prix+"{r}*40%",v:av}:av):"",
-      paye:fr||!paid?"":money(paid),reste:fr?"":{f:L.prix+"{r}-"+L.paye+"{r}",v:Math.max(0,prix-paid)},nom:fr?"":a.nom,note:a.note||""};
+      paye:fr||!paid?"":money(paid),reste:fr?"":{f:L.prix+"{r}-"+L.paye+"{r}",v:Math.max(0,prix-paid)},
+      r60:fr||!prix?"":{f:"MAX(0,"+L.prix+"{r}*60%-"+L.paye+"{r})",v:Math.max(0,Math.round(prix*0.6-paid))},r80:fr||!prix?"":{f:"MAX(0,"+L.prix+"{r}*80%-"+L.paye+"{r})",v:Math.max(0,Math.round(prix*0.8-paid))},nom:fr?"":a.nom,note:a.note||""};
     return defs.map(function(d){return v[d[0]]});
   });
   var nm=bung?"Liste des bungalows":showE?"Liste par étage":"Liste des lots";
@@ -1178,6 +1211,43 @@ async function buildXlsx(sheets,wbIn){
 }
 function u8ToB64(u8){var t="",C=0x8000;for(var i=0;i<u8.length;i+=C)t+=String.fromCharCode.apply(null,u8.subarray(i,i+C));return btoa(t)}
 var XLSX_MIME="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+/* Aperçu du fichier Excel dans l'application ; « Télécharger » enregistre le même fichier. */
+var xlv=null;
+async function xlPreview(name,u8){
+  try{
+    var XL=await loadXlsx(),wb=XL.read(u8,{type:"array"});
+    xlv={name:name,u8:u8,XL:XL,wb:wb,sheets:wb.SheetNames.filter(function(sn){return usedRange(XL,wb.Sheets[sn])}),cur:0};
+    if(!xlv.sheets.length)throw new Error("vide");
+    $("#xlv-title").textContent=name.replace(/\.xlsx$/,"");
+    $("#xlview").hidden=false;xlvRender();
+    try{$("[data-a=xlv-dl]").focus()}catch(e){}
+  }catch(e){await deliverFile(name,u8)}
+}
+function xlvRender(){
+  var XL=xlv.XL,sn=xlv.sheets[xlv.cur],ws=xlv.wb.Sheets[sn],rg=usedRange(XL,ws),MAXR=1500,cut=false;
+  if(rg.e.r-rg.s.r>=MAXR){rg.e.r=rg.s.r+MAXR-1;cut=true}
+  var hid={};(ws["!cols"]||[]).forEach(function(c,i){if(c&&c.hidden)hid[i]=1});
+  var mg={},skip={};(ws["!merges"]||[]).forEach(function(m){if(m.s.r<rg.s.r||m.s.r>rg.e.r)return;mg[m.s.r+","+m.s.c]=m;for(var r=m.s.r;r<=m.e.r;r++)for(var c=m.s.c;c<=m.e.c;c++)if(r!==m.s.r||c!==m.s.c)skip[r+","+c]=1});
+  var h="<table>";
+  for(var r=rg.s.r;r<=rg.e.r;r++){
+    var row="",any=false;
+    for(var c=rg.s.c;c<=rg.e.c;c++){
+      if(hid[c]||skip[r+","+c])continue;
+      var cl=ws[XL.utils.encode_cell({r:r,c:c})],v=cl?cl.v:"",isN=typeof v==="number";
+      var t=isN?xlvNum(v):String(v==null?"":v);
+      if(t!=="")any=true;
+      var m=mg[r+","+c],span="";if(m){var cs=0;for(var k=m.s.c;k<=m.e.c;k++)if(!hid[k])cs++;if(cs>1)span+=' colspan="'+cs+'"';if(m.e.r>m.s.r)span+=' rowspan="'+(Math.min(m.e.r,rg.e.r)-m.s.r+1)+'"'}
+      row+="<td"+(isN?' class="n"':"")+span+">"+esc(t)+"</td>";
+    }
+    if(any)h+="<tr>"+row+"</tr>";
+  }
+  h+="</table>";
+  $("#xlv-body").innerHTML=h;$("#xlv-body").scrollTop=0;$("#xlv-body").scrollLeft=0;
+  $("#xlv-sub").textContent=(xlv.sheets.length>1?"Feuille « "+sn+" » · ":"")+"Faites glisser le tableau pour tout voir."+(cut?" (1 500 premières lignes affichées)":"");
+  $("#xlv-tabs").innerHTML=xlv.sheets.length>1?xlv.sheets.map(function(x,i){return '<button type="button" data-a="xlv-tab" data-id="'+i+'" aria-pressed="'+(i===xlv.cur)+'">'+esc(x)+'</button>'}).join(""):"";
+}
+function xlvNum(v){var r=Math.abs(v)<10?Math.round(v*1000)/1000:Math.round(v*100)/100,neg=r<0,p=String(Math.abs(r)).split("."),i=p[0].replace(/\B(?=(\d{3})+(?!\d))/g," ");return (neg?"-":"")+i+(p[1]?","+p[1]:"")}
+function xlvClose(){$("#xlview").hidden=true;$("#xlv-body").innerHTML="";xlv=null}
 async function deliverFile(name,u8,mime){
   mime=mime||XLSX_MIME;
   if(window.AndroidBridge&&window.AndroidBridge.saveFile){window.AndroidBridge.saveFile(name,mime,u8ToB64(u8));return}
@@ -1250,7 +1320,7 @@ async function exportXl(kind,btn){
       catch(e2){u8=null}
     }
     if(!u8)u8=await buildXlsx(sheets);
-    await deliverFile(cleanName(name)+" "+today()+".xlsx",u8);
+    xlPreview(cleanName(name)+" "+today()+".xlsx",u8);
   }catch(e){notice("Impossible de créer le fichier Excel. Vérifiez la connexion internet et réessayez.")}
   if(btn){btn.disabled=false;btn.removeAttribute("aria-busy");btn.innerHTML=label}
 }
@@ -2007,7 +2077,7 @@ function aiReset(){
 function aiOpen(){if(!$("#ai-msgs").children.length)aiReset();$("#ai").hidden=false;setTimeout(function(){try{$("#ai-in").focus()}catch(e){}},50)}
 function aiClose(){$("#ai").hidden=true}
 /* ---------- Tableau de bord ---------- */
-var APP_VERSION="3.4",ACCOUNT=null;
+var APP_VERSION="3.5",ACCOUNT=null;
 var EYE_ON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 var EYE_OFF='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.6 10.6 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6A17 17 0 0 0 2 12s3.6 7 10 7a9.8 9.8 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
 function pwEyes(root){
@@ -2400,6 +2470,9 @@ document.addEventListener("click",function(e){
   else if(a==="detail")openDetail(id);
   else if(a==="pay")openSheet("paiements",null,id);
   else if(a==="xl")exportXl(id,el);
+  else if(a==="xlv-dl"){if(xlv)deliverFile(xlv.name,xlv.u8)}
+  else if(a==="xlv-close")xlvClose();
+  else if(a==="xlv-tab"){if(xlv){xlv.cur=+id;xlvRender()}}
   else if(a==="import"){var f=$("#imp-file");f.value="";f.click()}
   else if(a==="import-go")runImport(el);
   else if(a==="ai-open")aiOpen();
@@ -2454,7 +2527,7 @@ document.addEventListener("click",function(e){
   else if(a==="scope"){ui.scope=id;ui.q="";ui.dcat="";renderAll()}
 });
 document.addEventListener("keydown",function(e){
-  if(e.key==="Escape"){if(sheet)closeSheet();else if(ui.sel&&!$("#selbar").hidden)selStop();else if(detailId||impState)closeDetail();else if(!$("#ai").hidden&&!aiBusy)aiClose();else if(!$("#dash").hidden)dashClose()}
+  if(e.key==="Escape"){if(!$("#xlview").hidden)xlvClose();else if(sheet)closeSheet();else if(ui.sel&&!$("#selbar").hidden)selStop();else if(detailId||impState)closeDetail();else if(!$("#ai").hidden&&!aiBusy)aiClose();else if(!$("#dash").hidden)dashClose()}
   if((e.key==="Enter"||e.key===" ")&&e.target.matches&&e.target.matches('div[role="button"][data-a],[data-sid][role="checkbox"]')){e.preventDefault();e.target.click()}
 });
 document.addEventListener("input",function(e){
