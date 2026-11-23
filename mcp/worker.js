@@ -341,7 +341,7 @@ const TOOL_FN = {
     return "# " + (x.nom || "Lot disponible") + " — lot " + x.lot + "\nProjet : " + pName(s, x.projet) + (x.section ? " · " + x.section : "") + "\n"
       + [x.immeuble ? "Immeuble " + x.immeuble : "", x.etage, x.surface ? x.surface + " m²" : "", x.prixM2 ? num(x.prixM2) + " DH/m²" : ""].filter(Boolean).join(" · ")
       + "\nTéléphone : " + (x.tel || "—") + "\nPrix total : " + dh(x.prix) + "\nAvance exigée : " + (x.avance ? dh(x.avance) : "—")
-      + "\nPayé : " + dh(q) + " (" + pct(q, n(x.prix)) + " %) dont déjà payé (fiche) " + dh(x.dejaPaye) + (x.refCheque || x.banque ? " — chèque " + [x.refCheque, x.banque].filter(Boolean).join(", ") : "") + "\nReste à payer : " + dh(Math.max(0, n(x.prix) - q)) + "\nTranche atteinte : " + trancheOf(s, x)
+      + "\nPayé : " + dh(q) + " (" + pct(q, n(x.prix)) + " %) dont déjà payé (fiche) " + dh(x.dejaPaye) + (Array.isArray(x.dejaPayeParts) && x.dejaPayeParts.length > 1 ? " — versements d'après le fichier Excel : " + x.dejaPayeParts.map(dh).join(" + ") : "") + (x.refCheque || x.banque ? " — chèque " + [x.refCheque, x.banque].filter(Boolean).join(", ") : "") + "\nReste à payer : " + dh(Math.max(0, n(x.prix) - q)) + "\nTranche atteinte : " + trancheOf(s, x)
       + (x.note ? "\nNote : " + x.note : "") + "\n\n## Paiements saisis (" + pays.length + ")\n"
       + table(["Date", "Montant", "Tranche", "Mode", "Référence", "Banque", "Note"], pays.map(y => [fdate(y.date), dh(y.montant), y.tranche || "", y.mode || "", y.reference || "", y.banque || "", y.note || ""]));
   },

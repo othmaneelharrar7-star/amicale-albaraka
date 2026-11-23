@@ -19,6 +19,7 @@ Application de gestion interne du bureau de l'Amicale Albaraka (Président, Secr
 | `app/` | Coquille Android (WebView, `MainActivity.kt`, `app/build.gradle.kts` pour la version). Ne pas modifier `app/src/main/assets/index.html` à la main : il est régénéré. |
 | `.github/workflows/deploy-web.yml` | Version web sur GitHub Pages (même Firebase, mêmes comptes) : https://othmaneelharrar7-star.github.io/amicale-albaraka/ — publiée à chaque push sur `main`. |
 | `mcp/worker.js` | Connecteur MCP sur Cloudflare Workers : lecture + écriture (modifier_adherent, ajouter_adherent, ajouter_paiement, ajouter_cheque, joindre_fichier ; jamais de suppression). Écritures en PATCH avec `updateMask` (les autres champs, dont `src`, sont gardés). Déployé par `.github/workflows/deploy-mcp.yml` à chaque push dans `mcp/`. |
+| `.github/workflows/sauvegarde.yml` + `.github/scripts/sauvegarde.mjs` | Sauvegarde automatique chaque nuit : toute la base (photos comprises), gzip + AES-256-GCM, artefact GitHub gardé 90 jours. Clé dérivée du secret `CLOUDFLARE_API_TOKEN` (ou secret `BACKUP_KEY`), enregistrée dans `am_meta/backup` et affichée dans le Tableau de bord. |
 | `firestore.rules` | Règles Firestore (accès aux comptes connectés). L'inscription publique est désactivée dans Firebase : les comptes sont créés à la main. |
 
 ## Faire une modification
@@ -36,7 +37,11 @@ Application de gestion interne du bureau de l'Amicale Albaraka (Président, Secr
 - `adherents` : `projet`, `section`, `lot`, `etage`, `immeuble`, `nom` (vide = lot DISPONIBLE), `tel`, `surface`, `prixM2`, `prix`, `avance`, `dejaPaye`, `tranches`, `refCheque`, `banque`, `note`, `src` (lien vers la ligne du fichier Excel d'origine : ne jamais le perdre).
 - `paiements` : `adherentId`, `projet`, `date`, `montant`, `tranche`, `mode`, `reference`, `banque`, `note`.
 - `cheques`, `factures` (`valP`/`valT` = validations), `phases`, `journal`, `documents`, `fichiers` (pièces jointes en Bytes ≤ 950 Ko), `meta` (`config` : jeton App Check ; `mcp` : adresse du connecteur).
-- Montant payé = `dejaPaye` + somme des paiements. Projets « Casino » = bungalows (pas d'étage ni d'immeuble) ; étage/immeuble seulement pour Sid El Abed et la partie Appartements de Val d'Or (`showEtage`).
+- Montant payé = `dejaPaye` + somme des paiements. `dejaPayeParts` = détail des versements lu dans le fichier Excel (case « Montant payé » écrite comme `=900000+400000`), valable seulement si la somme = `dejaPaye` (`partsValid`). Les données déjà importées sont complétées automatiquement depuis le fichier d'origine gardé (`excelPartsFromModels`). « Ajouter le chèque » transforme tous ces versements en vrais paiements (tranche 1…n), `dejaPaye` passe à 0. Projets « Casino » = bungalows (pas d'étage ni d'immeuble) ; étage/immeuble seulement pour Sid El Abed et la partie Appartements de Val d'Or (`showEtage`).
+
+## Sauvegarde et restauration
+
+Tableau de bord > Sauvegarde : « Télécharger une sauvegarde » (JSON complet, photos en base64, sans `am_meta`) et « Restaurer depuis un fichier » (JSON ou `.json.enc` de la sauvegarde automatique). La restauration **ne recrée que les éléments absents** (supprimés depuis) et ne modifie jamais ceux qui existent. Format : `{app:"amicale-albaraka", type:"sauvegarde", collections:{<col>:[{__id, ...champs}]}}`, octets en `{__bytes:base64}`.
 
 ## Points sensibles
 

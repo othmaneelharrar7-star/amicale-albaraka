@@ -40,7 +40,7 @@ cut('<div class="backup" id="backup" hidden>','</main>','''<div class="backup" i
 rep('.backup{margin-top:8px;','.gate>p{color:var(--muted);text-align:center}\n.linkbtn{background:none;border:0;color:#2457A8;font-weight:700;min-height:44px}\n.backup{margin-top:8px;')
 # ---- script head
 rep('<script>\n(function(){','''<script type="module">
-import {initializeApp,getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut,sendPasswordResetEmail,updatePassword,reauthenticateWithCredential,EmailAuthProvider,getFirestore,collection,doc,setDoc,getDoc,deleteDoc,onSnapshot,Bytes,getAI,getGenerativeModel,GoogleAIBackend,initializeAppCheck,ReCaptchaV3Provider,CustomProvider} from "./firebase.js";
+import {initializeApp,getAuth,onAuthStateChanged,signInWithEmailAndPassword,signOut,sendPasswordResetEmail,updatePassword,reauthenticateWithCredential,EmailAuthProvider,getFirestore,collection,doc,setDoc,getDoc,getDocs,deleteDoc,onSnapshot,Bytes,getAI,getGenerativeModel,GoogleAIBackend,initializeAppCheck,ReCaptchaV3Provider,CustomProvider} from "./firebase.js";
 import * as CFG from "./firebase-config.js";
 const firebaseConfig=CFG.firebaseConfig;
 (function(){''')
@@ -194,7 +194,20 @@ function start(){
   ACCOUNT={email:function(){return auth.currentUser&&auth.currentUser.email||""},
     changePassword:async function(cur,nw){var u=auth.currentUser;if(!u)throw {code:"auth/no-user"};await reauthenticateWithCredential(u,EmailAuthProvider.credential(u.email,cur));await updatePassword(u,nw);try{if(localStorage.getItem(CRED_KEY))localStorage.setItem(CRED_KEY,JSON.stringify({e:u.email,p:btoa(unescape(encodeURIComponent(nw)))}))}catch(e){}},
     logout:function(){signOut(auth).catch(function(){})},
-    getMcp:async function(){var sn=await getDoc(doc(fdb,PRE+"meta","mcp"));return sn.exists()?sn.data():null}};
+    getMcp:async function(){var sn=await getDoc(doc(fdb,PRE+"meta","mcp"));return sn.exists()?sn.data():null},
+    /* sauvegarde / restauration (les octets des fichiers passent en base64) */
+    backupDump:async function(cols,progress){
+      var enc=function(v){if(v&&typeof v==="object"){if(typeof v.toBase64==="function"&&typeof v.toUint8Array==="function")return {__bytes:v.toBase64()};if(Array.isArray(v))return v.map(enc);var o={};for(var k in v)o[k]=enc(v[k]);return o}return v};
+      var out={};
+      for(var i=0;i<cols.length;i++){if(progress)progress(cols[i]);var sn=await withTimeout(getDocs(collection(fdb,PRE+cols[i])),120000);out[cols[i]]=sn.docs.map(function(d){var o=enc(d.data());o.__id=d.id;return o})}
+      return out;
+    },
+    backupExists:async function(col,id){var sn=await getDoc(doc(fdb,PRE+col,id));return sn.exists()},
+    backupWrite:async function(col,id,data){
+      var dec=function(v){if(v&&typeof v==="object"){if(typeof v.__bytes==="string")return Bytes.fromBase64String(v.__bytes);if(Array.isArray(v))return v.map(dec);var o={};for(var k in v)o[k]=dec(v[k]);return o}return v};
+      await withTimeout(setDoc(doc(fdb,PRE+col,id),dec(data)),45000);
+    },
+    backupMeta:async function(){var sn=await getDoc(doc(fdb,PRE+"meta","backup"));return sn.exists()?sn.data():null}};
   var acDone=false,acKey="";
   GEM={app:app,getAI:getAI,getGenerativeModel:getGenerativeModel,GoogleAIBackend:GoogleAIBackend,
     hasAppCheck:function(){return acDone},

@@ -1,0 +1,50 @@
+name: Sauvegarde automatique
+
+# Chaque nuit : copie complète et chiffrée de la base de l'application (photos comprises),
+# gardée 90 jours dans les artefacts de GitHub. Pour restaurer : Tableau de bord > Sauvegarde.
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sauvegarde:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Préparer les accès
+        env:
+          CF: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          FB_EMAIL_OVERRIDE: ${{ secrets.FB_EMAIL }}
+          FB_PASSWORD_OVERRIDE: ${{ secrets.FB_PASSWORD }}
+          BK_KEY_OVERRIDE: ${{ secrets.BACKUP_KEY }}
+        run: |
+          if [ -z "$CF" ]; then echo "::error::Secret CLOUDFLARE_API_TOKEN manquant."; exit 1; fi
+          pw="${FB_PASSWORD_OVERRIDE:-$(printf 'amicale-fb:%s' "$CF" | sha256sum | cut -c1-32)Aa1}"
+          key="${BK_KEY_OVERRIDE:-$(printf 'amicale-backup:%s' "$CF" | sha256sum | cut -c1-40)}"
+          echo "::add-mask::$pw"
+          echo "::add-mask::$key"
+          {
+            echo "FB_EMAIL=${FB_EMAIL_OVERRIDE:-claude-mcp@amicale-albaraka.ma}"
+            echo "FB_PASSWORD=$pw"
+            echo "BK_KEY=$key"
+            echo "FB_API_KEY=$(grep -oP 'FB_API_KEY\s*=\s*"\K[^"]+' mcp/wrangler.toml)"
+            echo "FB_PROJECT_ID=$(grep -oP 'FB_PROJECT_ID\s*=\s*"\K[^"]+' mcp/wrangler.toml)"
+            echo "OUT_DIR=$RUNNER_TEMP/sauvegarde"
+            echo "DAY=$(date -u +%Y-%m-%d)"
+          } >> "$GITHUB_ENV"
+      - name: Sauvegarder la base
+        run: node .github/scripts/sauvegarde.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sauvegarde-${{ env.DAY }}
+          path: ${{ env.OUT_DIR }}/*.enc
+          retention-days: 90
+          if-no-files-found: error

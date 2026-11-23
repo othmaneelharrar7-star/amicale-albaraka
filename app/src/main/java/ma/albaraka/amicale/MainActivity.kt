@@ -92,6 +92,9 @@ class MainActivity : AppCompatActivity() {
                         "application/vnd.ms-excel",
                         "application/octet-stream"
                     )
+                } else if (wanted.contains("json")) {
+                    // Restauration d'une sauvegarde (.json ou .json.enc)
+                    arrayOf("application/json", "application/octet-stream", "text/plain", "*/*")
                 } else {
                     arrayOf("application/pdf", "image/*")
                 }

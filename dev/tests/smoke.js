@@ -12,6 +12,7 @@ const errs=[];
 const dom=new JSDOM(html,{runScripts:'dangerously',url:'https://appassets.androidplatform.net/assets/index.html',pretendToBeVisual:true,
  beforeParse(w){
   w.eval(fs.readFileSync(A('xlsx.min.js'),'utf8'));w.eval(fs.readFileSync(A('exceljs.min.js'),'utf8'));
+  w.TextEncoder=TextEncoder;w.TextDecoder=TextDecoder;w.DecompressionStream=DecompressionStream;Object.defineProperty(w,'crypto',{value:globalThis.crypto,configurable:true});
   w.__saved=[];w.AndroidBridge={saveFile:(n,m,b)=>w.__saved.push({n,m,b}),openFile:()=>{}};
   const store={},subs={};let authCb=null,n=0;
   const fire=c=>(subs[c]||[]).forEach(cb=>cb({docs:Object.entries(store[c]||{}).map(([id,d])=>({id,data:()=>d})),metadata:{fromCache:false}}));
@@ -26,7 +27,8 @@ const dom=new JSDOM(html,{runScripts:'dangerously',url:'https://appassets.androi
    getDoc:async r=>({exists:()=>!!(store[r.col]&&store[r.col][r.id]),data:()=>store[r.col][r.id]}),
    deleteDoc:async r=>{if(store[r.col])delete store[r.col][r.id];fire(r.col)},
    onSnapshot:(c,cb)=>{(subs[c.col]=subs[c.col]||[]).push(cb);setTimeout(()=>fire(c.col),0);return()=>{subs[c.col]=subs[c.col].filter(x=>x!==cb)}},
-   Bytes:{fromUint8Array:u=>({toUint8Array:()=>u})},
+   Bytes:(()=>{const mk=u=>({toUint8Array:()=>u,toBase64:()=>Buffer.from(u).toString('base64')});return {fromUint8Array:mk,fromBase64String:b=>mk(Uint8Array.from(Buffer.from(b,'base64')))}})(),
+   getDocs:async c=>({docs:Object.entries(store[c.col]||{}).map(([id,d])=>({id,data:()=>d}))}),
    GoogleAIBackend:function(){},getAI:()=>({}),initializeAppCheck:(a,o)=>{w.__ac=w.FIREBASE_APPCHECK_DEBUG_TOKEN||o.provider.key},ReCaptchaV3Provider:function(k){this.key=k},CustomProvider:function(o){this.o=o},
    getGenerativeModel:(ai,o)=>{w.__aiCfg=o;return {startChat:(h)=>{w.__aiHist=h;let step=0;const sm=async(m)=>{w.__aiSent=(w.__aiSent||[]).concat([m]);step++;
      if(!w.__ac)throw new Error('AI: Error fetching from https://firebasevertexai.googleapis.com/v1beta/projects/x/models/m:generateContent: [403 ] Permission denied on the service. ACCESS_DENIED');
@@ -71,6 +73,7 @@ async function fill(vals){for(const k in vals){const el=$('#form').elements[k];i
   const t0=Date.now();click($('#imp-go'));for(let i=0;i<200&&!$('#detail').hidden;i++)await sleep(50);
   console.log('import done in',Date.now()-t0,'ms; notice:',$('#notice').textContent);
   console.log('docs:',Object.keys(w.__store.am_adherents||{}).length);
+  {const k=Object.values(w.__store.am_adherents||{}).find(d=>/KARIM/.test(d.nom||''));console.log('versements Excel:',k&&JSON.stringify(k.dejaPayeParts),k&&k.dejaPaye);if(!k||!k.dejaPayeParts||k.dejaPayeParts.join('+')!=='100000+150000')errs.push('versements Excel');}
   console.log('hero+list:',$('#view').textContent.replace(/\s+/g,' ').slice(0,700));
   console.log('groups:',[...d.querySelectorAll('.grp')].map(g=>g.textContent).join(' | '));
   // re-import: no duplicates
@@ -214,6 +217,33 @@ async function fill(vals){for(const k in vals){const el=$('#form').elements[k];i
    const fs=$('#f-fposte');fs.value='';fs.dispatchEvent(new w.Event('input',{bubbles:true}));await sleep(10);
    const st=$('#f-fst');st.value='Payée';st.dispatchEvent(new w.Event('input',{bubbles:true}));await sleep(10);
    console.log('filtre payée:',$('#list').textContent.slice(0,50));if(/ALU TEST/.test($('#list').textContent))errs.push('filtre statut');}
+  // ---- sauvegarde et restauration
+  {
+    const pick=async(name,txt)=>{const f=new w.File([txt],name);if(!f.text)f.text=async()=>txt;const inp=$('#bk-file');Object.defineProperty(inp,'files',{value:[f],configurable:true});inp.dispatchEvent(new w.Event('change',{bubbles:true}));for(let i=0;i<60&&!$('#bk-confirm').textContent&&!/rien|pas|Impossible|protégée/.test($('#bk-msg').textContent);i++)await sleep(30)};
+    click($('#btn-dash'));await sleep(40);
+    click(d.querySelector('[data-a=bk-dump]'));for(let i=0;i<60&&!/prête/.test($('#bk-msg').textContent);i++)await sleep(30);
+    const sv=w.__saved.pop();const bk=JSON.parse(Buffer.from(sv.b,'base64').toString());
+    console.log('backup:',sv.n,sv.m,Object.entries(bk.collections).map(([k,v])=>k+'='+v.length).join(' '));
+    if(!bk.collections.adherents.length)errs.push('backup vide');
+    const victim=bk.collections.adherents.find(a=>a.nom)||bk.collections.adherents[0];
+    await w.__fb.deleteDoc({col:'am_adherents',id:victim.__id});await sleep(30);
+    await pick('s.json',JSON.stringify(bk));console.log('restore plan:',$('#bk-confirm').textContent.replace(/\s+/g,' ').slice(0,160));
+    click(d.querySelector('[data-a=bk-apply]'));for(let i=0;i<60&&!/rétabli/.test($('#bk-msg').textContent);i++)await sleep(30);
+    console.log('restored:',$('#bk-msg').textContent,!!w.__store.am_adherents[victim.__id]);if(!w.__store.am_adherents[victim.__id])errs.push('restauration');
+    await pick('s.json',JSON.stringify(bk));console.log('again:',$('#bk-msg').textContent.slice(0,60));
+    // sauvegarde chiffrée (même format que la sauvegarde automatique de GitHub)
+    const zlib=require('zlib'),cr=require('crypto');const key=cr.createHash('sha256').update('cle-test').digest(),iv=cr.randomBytes(12),ci=cr.createCipheriv('aes-256-gcm',key,iv);
+    const data=Buffer.concat([ci.update(zlib.gzipSync(Buffer.from(JSON.stringify(bk)))),ci.final(),ci.getAuthTag()]);
+    const enc=JSON.stringify({app:'amicale-albaraka',type:'sauvegarde-chiffree',v:1,at:bk.at,alg:'AES-GCM',gzip:true,iv:iv.toString('base64'),data:data.toString('base64')});
+    w.__store.am_meta=w.__store.am_meta||{};w.__store.am_meta.backup={lastAt:new Date().toISOString(),count:9,key:'cle-test'};
+    click(d.querySelector('#dash [data-a=dash-close]'));click($('#btn-dash'));await sleep(60);
+    console.log('auto box:',$('#bk-auto').textContent.replace(/\s+/g,' ').slice(0,90),'| key shown:',$('#bk-key-show')&&$('#bk-key-show').value);
+    const pay=Object.keys(w.__store.am_paiements||{})[0];if(pay){await w.__fb.deleteDoc({col:'am_paiements',id:pay});await sleep(30)}
+    await pick('s.json.enc',enc);console.log('enc plan:',$('#bk-confirm').textContent.replace(/\s+/g,' ').slice(0,120));
+    click(d.querySelector('[data-a=bk-apply]'));for(let i=0;i<60&&!/rétabli/.test($('#bk-msg').textContent);i++)await sleep(30);
+    console.log('enc restored:',$('#bk-msg').textContent);if(pay&&!w.__store.am_paiements[pay])errs.push('restauration chiffrée');
+    click(d.querySelector('#dash [data-a=dash-close]'));
+  }
   console.log('errors:',errs);
   if(errs.length){console.error('ÉCHEC : erreurs JavaScript');process.exitCode=1}else console.log('OK : test réussi');
   process.exit(process.exitCode||0);
