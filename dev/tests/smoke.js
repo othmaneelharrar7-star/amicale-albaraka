@@ -315,6 +315,13 @@ async function fill(vals){for(const k in vals){const el=$('#form').elements[k];i
    const X=require('xlsx-js-style');const f=w.__saved.pop();const wb=X.read(Buffer.from(f.b,'base64'));const hdr=X.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1}).find(r=>r.includes('Reste à payer'))||[];
    console.log('colonnes R1:',f.n,'|',hdr.filter(x=>/Reste/.test(x)).join(' | '));if(!hdr.includes('Reste pour 60 %')||!hdr.includes('Reste pour 80 %'))errs.push('colonnes 60/80');
    click([...d.querySelectorAll('#seg button')].find(b=>b.textContent==='Tout'));await sleep(20);}
+  // v3.9 : Casino 2 seulement : tranches cumulées avance → 60 % → 80 % → 100 %
+  {w.location.hash='#adherents';await sleep(30);click([...d.querySelectorAll('#pills button')].find(b=>b.textContent==='Casino 2'));await sleep(60);
+   const id=Object.entries(w.__store.am_adherents).find(([k,v])=>v.nom==='CASINO TEST B')[0];
+   click(d.querySelector('#view [data-a=detail][data-id="'+id+'"]'));await sleep(40);
+   const pal=[...d.querySelectorAll('#detail .palier small')].map(x=>x.textContent);console.log('casino 2 paliers:',pal.join(' | '));
+   if(pal.join('|')!=='Avance 40 %|Tranche 60 %|Tranche 80 %|Tranche 100 %')errs.push('casino 2 paliers');
+   click(d.querySelector('[data-a=close-detail]'));await sleep(20);}
   console.log('errors:',errs);
   if(errs.length){console.error('ÉCHEC : erreurs JavaScript');process.exitCode=1}else console.log('OK : test réussi');
   process.exit(process.exitCode||0);
