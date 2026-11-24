@@ -321,6 +321,11 @@ async function fill(vals){for(const k in vals){const el=$('#form').elements[k];i
    click(d.querySelector('#view [data-a=detail][data-id="'+id+'"]'));await sleep(40);
    const pal=[...d.querySelectorAll('#detail .palier small')].map(x=>x.textContent);console.log('casino 2 paliers:',pal.join(' | '));
    if(pal.join('|')!=='Avance 40 %|Tranche 60 %|Tranche 80 %|Tranche 100 %')errs.push('casino 2 paliers');
+   // v4.0 : montant de la tranche 60 % fixé à la main
+   click([...d.querySelectorAll('#detail [data-a=edit][data-col=adherents]')].find(b=>/fiche/.test(b.textContent)));await sleep(30);
+   $('#fld-montantT60').value='1234567';submit('#form');await sleep(60);
+   const t60=[...d.querySelectorAll('#detail .palier')][1].textContent;console.log('tranche 60 fixée:',t60,'| src gardé',!!w.__store.am_adherents[id].src);
+   if(!/1 234 567 DH/.test(t60)||w.__store.am_adherents[id].montantT60!==1234567)errs.push('montant tranche 60');
    click(d.querySelector('[data-a=close-detail]'));await sleep(20);}
   console.log('errors:',errs);
   if(errs.length){console.error('ÉCHEC : erreurs JavaScript');process.exitCode=1}else console.log('OK : test réussi');

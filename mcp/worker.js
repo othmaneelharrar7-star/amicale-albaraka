@@ -104,7 +104,7 @@ function findAdh(s, a) {
   if (l.length > 1) throw new Error("Plusieurs lots correspondent, précisez la partie : " + l.map(x => x.lot + " (" + (x.section || "sans partie") + ", " + (x.nom || "disponible") + ")").join(" ; "));
   return { p, x: l[0] };
 }
-const ADH_FIELDS = { nom: "s", tel: "s", etage: "s", immeuble: "s", note: "s", banque: "s", refCheque: "s", surface: "n", prixM2: "n", prix: "n", avance: "n", dejaPaye: "n", tranches: "n" };
+const ADH_FIELDS = { nom: "s", tel: "s", etage: "s", immeuble: "s", note: "s", banque: "s", refCheque: "s", surface: "n", prixM2: "n", prix: "n", avance: "n", dejaPaye: "n", tranches: "n", montantT60: "n" };
 function adhData(a, old) {
   const d = {};
   for (const k in ADH_FIELDS) { if (a[k] === undefined || a[k] === null) continue; d[k] = ADH_FIELDS[k] === "n" ? numArg(a[k], k) : String(a[k]).trim(); }
@@ -266,7 +266,7 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { projet: { type: "string", description: "Nom du projet, ou « association » pour les documents de l'association. Tous si absent." } } } }
 ].map(t => Object.assign(t, { annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }));
 const P_ADH = { projet: { type: "string", description: "Nom du projet (ex. Val d'Or)" }, partie: { type: "string", description: "Partie du projet si besoin (Appartements, Résidence 1, Résidence 2, Commerce…)" }, lot: { type: "string", description: "Appartement ou lot (ex. C15, R1-6)" } };
-const P_FIELDS = { nom: { type: "string", description: "Nom et prénom" }, tel: { type: "string" }, surface: { type: "number", description: "m²" }, prixM2: { type: "number", description: "Prix au m² (DH). Le prix total est recalculé avec la surface si « prix » n'est pas donné." }, prix: { type: "number", description: "Prix total (DH)" }, avance: { type: "number", description: "Avance exigée (DH). Si absente : 40 % du prix, recalculée quand le prix change ; donnée seule, elle recalcule le prix (avance / 40 %)." }, etage: { type: "string" }, immeuble: { type: "string" }, note: { type: "string" } };
+const P_FIELDS = { nom: { type: "string", description: "Nom et prénom" }, tel: { type: "string" }, surface: { type: "number", description: "m²" }, prixM2: { type: "number", description: "Prix au m² (DH). Le prix total est recalculé avec la surface si « prix » n'est pas donné." }, prix: { type: "number", description: "Prix total (DH)" }, avance: { type: "number", description: "Avance exigée (DH). Si absente : 40 % du prix, recalculée quand le prix change ; donnée seule, elle recalcule le prix (avance / 40 %)." }, etage: { type: "string" }, immeuble: { type: "string" }, note: { type: "string" }, montantT60: { type: "number", description: "Montant de la tranche 60 % fixé à la main (DH), à la place de prix × 60 % ; 0 pour revenir au calcul" } };
 const WRITE_TOOLS = [
   { name: "modifier_adherent", title: "Modifier la fiche d'un adhérent",
     description: "Modifie la fiche d'un lot existant (nom, téléphone, surface, prix au m², prix, avance exigée, note…). Seuls les champs donnés changent. Ne pas utiliser pour un paiement : utiliser ajouter_paiement.",
