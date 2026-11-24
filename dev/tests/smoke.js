@@ -301,10 +301,11 @@ async function fill(vals){for(const k in vals){const el=$('#form').elements[k];i
   {console.log('aperçu vu:',xlvSeen&&xlvSeen.title,'| contenu:',xlvSeen&&xlvSeen.body.slice(0,60),'| feuilles:',xlvSeen&&xlvSeen.tabs);
    if(!xlvSeen||!/FORMULE TEST/.test(xlvSeen.body))errs.push('aperçu excel');
    const id=Object.entries(w.__store.am_adherents).find(([k,v])=>v.nom==='FORMULE TEST A')[0];
+   await sleep(600);
    console.log('carte palier:',(d.querySelector('#view [data-a=detail][data-id="'+id+'"] .nextp')||{}).textContent);
    click(d.querySelector('#view [data-a=detail][data-id="'+id+'"]'));await sleep(30);
    const pal=[...d.querySelectorAll('#detail .palier')].map(x=>x.textContent);console.log('paliers:',pal.join(' | '));
-   if(pal.length!==4||!/172 000 DH/.test(pal[0])||!/200 000 DH/.test(pal[1])||!/200 000 DH/.test(pal[2])||!/200 000 DH/.test(pal[3]))errs.push('paliers');
+   if(pal.length!==2||!/Avance 40 %400 000 DHReste 172 000 DH/.test(pal[0])||!/Tranche 100 %1 000 000 DHReste 772 000 DH/.test(pal[1]))errs.push('paliers');
    click(d.querySelector('[data-a=close-detail]'));await sleep(20);
    const ws=d.querySelector('[data-a=seg]');
    w.location.hash='#adherents';await sleep(30);
