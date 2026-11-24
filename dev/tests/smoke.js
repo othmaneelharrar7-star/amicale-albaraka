@@ -304,7 +304,7 @@ async function fill(vals){for(const k in vals){const el=$('#form').elements[k];i
    console.log('carte palier:',(d.querySelector('#view [data-a=detail][data-id="'+id+'"] .nextp')||{}).textContent);
    click(d.querySelector('#view [data-a=detail][data-id="'+id+'"]'));await sleep(30);
    const pal=[...d.querySelectorAll('#detail .palier')].map(x=>x.textContent);console.log('paliers:',pal.join(' | '));
-   if(pal.length!==4||!/Reste 172 000/.test(pal[0])||!/Reste 372 000/.test(pal[1])||!/Reste 572 000/.test(pal[2])||!/Reste 772 000/.test(pal[3]))errs.push('paliers');
+   if(pal.length!==4||!/400 000 DH/.test(pal[0])||!/600 000 DH/.test(pal[1])||!/800 000 DH/.test(pal[2])||!/1 000 000 DH/.test(pal[3])||/Reste/.test(pal.join('')))errs.push('paliers');
    click(d.querySelector('[data-a=close-detail]'));await sleep(20);
    const ws=d.querySelector('[data-a=seg]');
    w.location.hash='#adherents';await sleep(30);
