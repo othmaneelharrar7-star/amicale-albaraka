@@ -138,10 +138,32 @@ function b64ToBytes(b) { const t = atob(String(b).replace(/^data:[^,]*,/, "").re
 
 const WRITE_FN = {
   async modifier_adherent(s, a, env) {
+    if (a.deplacer_vers) return WRITE_FN.deplacer_adherent(s, a, env);
     const { x } = findAdh(s, a), d = adhData(a, x);
     if (!Object.keys(d).length) throw new Error("Rien à modifier : donnez au moins un champ (nom, tel, surface, prixM2, prix, avance, note…).");
     await fsSet(env, "adherents", x.id, d);
     return "✅ Fiche modifiée : " + adhLine(s, x, d) + "\n" + changes(x, d);
+  },
+  /* change d'adhérent de lot : nom, montants déjà payés, pièce jointe et paiements passent sur le lot libre « deplacer_vers » ;
+     l'ancien lot redevient DISPONIBLE (ses caractéristiques et son lien avec le fichier Excel restent) */
+  async deplacer_adherent(s, a, env) {
+    const { p, x } = findAdh(s, a);
+    if (isFree(x)) throw new Error("Le lot " + x.lot + " est déjà disponible : rien à déplacer.");
+    const { x: y } = findAdh(s, { projet: a.projet, partie: a.partie_dest || a.partie, lot: a.deplacer_vers });
+    if (y.id === x.id) throw new Error("Même lot.");
+    if (!isFree(y)) throw new Error("Le lot " + y.lot + " est attribué à " + y.nom + " : libérez-le d'abord.");
+    const MOVE = ["nom", "tel", "dejaPaye", "dejaPayeParts", "tranches", "refCheque", "banque", "fileId", "fileName", "fileType", "montantT60"];
+    const to = {}, clear = {};
+    MOVE.forEach(k => { const v = x[k]; to[k] = v === undefined ? (k === "dejaPaye" || k === "tranches" || k === "montantT60" ? 0 : k === "dejaPayeParts" || k === "fileId" ? null : "") : v; clear[k] = typeof to[k] === "number" ? 0 : (k === "dejaPayeParts" || k === "fileId" ? null : ""); });
+    if (a.note_dest !== undefined) to.note = String(a.note_dest);
+    await fsSet(env, "adherents", y.id, to);
+    const pays = s.paiements.filter(q => q.adherentId === x.id);
+    for (const q of pays) await fsSet(env, "paiements", q.id, { adherentId: y.id });
+    await fsSet(env, "adherents", x.id, clear);
+    const paid = paidOf(s, x);
+    return "✅ " + x.nom + " déplacé du lot " + x.lot + " vers le lot " + y.lot + " (" + p.nom + ")\n- " + pays.length + " paiement(s) déplacé(s), déjà payé " + dh(x.dejaPaye) + " · total payé " + dh(paid)
+      + "\n- Lot " + y.lot + " : prix " + dh(y.prix) + (n(y.avance) ? " · avance exigée " + dh(y.avance) : "") + " · reste " + dh(Math.max(0, n(y.prix) - paid))
+      + "\n- Lot " + x.lot + " : maintenant DISPONIBLE";
   },
   async ajouter_adherent(s, a, env) {
     const p = findProj(s, a.projet); if (!p) throw new Error("Indiquez le projet.");
@@ -266,7 +288,7 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { projet: { type: "string", description: "Nom du projet, ou « association » pour les documents de l'association. Tous si absent." } } } }
 ].map(t => Object.assign(t, { annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }));
 const P_ADH = { projet: { type: "string", description: "Nom du projet (ex. Val d'Or)" }, partie: { type: "string", description: "Partie du projet si besoin (Appartements, Résidence 1, Résidence 2, Commerce…)" }, lot: { type: "string", description: "Appartement ou lot (ex. C15, R1-6)" } };
-const P_FIELDS = { nom: { type: "string", description: "Nom et prénom" }, tel: { type: "string" }, surface: { type: "number", description: "m²" }, prixM2: { type: "number", description: "Prix au m² (DH). Le prix total est recalculé avec la surface si « prix » n'est pas donné." }, prix: { type: "number", description: "Prix total (DH)" }, avance: { type: "number", description: "Avance exigée (DH). Si absente : 40 % du prix, recalculée quand le prix change ; donnée seule, elle recalcule le prix (avance / 40 %)." }, etage: { type: "string" }, immeuble: { type: "string" }, note: { type: "string" }, montantT60: { type: "number", description: "Montant de la tranche 60 % fixé à la main (DH), à la place de prix × 60 % ; 0 pour revenir au calcul" } };
+const P_FIELDS = { nom: { type: "string", description: "Nom et prénom" }, tel: { type: "string" }, surface: { type: "number", description: "m²" }, prixM2: { type: "number", description: "Prix au m² (DH). Le prix total est recalculé avec la surface si « prix » n'est pas donné." }, prix: { type: "number", description: "Prix total (DH)" }, avance: { type: "number", description: "Avance exigée (DH). Si absente : 40 % du prix, recalculée quand le prix change ; donnée seule, elle recalcule le prix (avance / 40 %)." }, etage: { type: "string" }, immeuble: { type: "string" }, note: { type: "string" }, montantT60: { type: "number", description: "Montant de la tranche 60 % fixé à la main (DH), à la place de prix × 60 % ; 0 pour revenir au calcul" }, deplacer_vers: { type: "string", description: "modifier_adherent seulement : déplace l'adhérent (nom, déjà payé, paiements) vers ce lot libre ; l'ancien lot devient disponible" }, note_dest: { type: "string", description: "avec deplacer_vers : nouvelle note du lot de destination" } };
 const WRITE_TOOLS = [
   { name: "modifier_adherent", title: "Modifier la fiche d'un adhérent",
     description: "Modifie la fiche d'un lot existant (nom, téléphone, surface, prix au m², prix, avance exigée, note…). Seuls les champs donnés changent. Ne pas utiliser pour un paiement : utiliser ajouter_paiement.",
